@@ -1312,7 +1312,10 @@ const ghCfg = () => JSON.parse(localStorage.getItem('ghcfg') || '{}');
 function saveGhCfg() {
   const token = document.getElementById('gh_token').value.trim();
   const dev = document.getElementById('gh_dev').value.trim() || 'phone';
-  if (token) localStorage.setItem('ghcfg', JSON.stringify({token, dev}));
+  if (token) {
+    localStorage.setItem('ghcfg', JSON.stringify({token, dev}));
+    if (window.CalAI && CalAI.saveGhToken) CalAI.saveGhToken(token, dev);
+  }
 }
 function b64encode(str) {
   const bytes = new TextEncoder().encode(str);
@@ -1771,6 +1774,13 @@ function saveConfig() {
   setInterval(pollPeers, 15000);
   dumpDebug(false);
   setInterval(() => dumpDebug(false), 60000);
+  // 后台自动云同步：每 10 分钟把快照交给 Java 层，服务每 6 小时推一次 GitHub
+  const autoSync = () => {
+    if (window.CalAI && CalAI.syncNow && ghCfg().token)
+      CalAI.syncNow(JSON.stringify(collectAll()));
+  };
+  setTimeout(autoSync, 30000);
+  setInterval(autoSync, 600000);
 })();
 </script>
 </body>
