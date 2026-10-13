@@ -1341,12 +1341,39 @@ async function ghApi(path, cfg, method, body) {
   if (!r.ok && r.status !== 404) throw new Error(j.message || ('HTTP ' + r.status));
   return r.status === 404 ? null : j;
 }
+// 中央服务器（统一数据库）：注册拿凭证，之后凭 name+secret 读写自己的数据
+async function serverCred(base) {
+  let c = JSON.parse(localStorage.getItem('servercred') || 'null');
+  if (c) return c;
+  const name = localStorage.getItem('myname') || '匿名';
+  const r = await fetch(base + '/api/register', {method: 'POST',
+    headers: {'Content-Type': 'application/json'}, body: JSON.stringify({name})});
+  const j = await r.json();
+  if (!r.ok) throw new Error(j.error === 'name_taken'
+    ? '昵称 "' + name + '" 已被占用，改个昵称再试' : (j.error || '注册失败'));
+  c = {name: j.name, secret: j.secret};
+  localStorage.setItem('servercred', JSON.stringify(c));
+  return c;
+}
+
 async function cloudPush() {
   const el = document.getElementById('cloud_msg');
   try {
     saveGhCfg();
+    const addr = serverAddr();
+    if (addr) {  // 统一数据库优先：中央服务器
+      const base = addr.replace(/\/$/, '');
+      const c = await serverCred(base);
+      const r = await fetch(base + '/api/kv/put', {method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({name: c.name, secret: c.secret,
+          data: collectAll()})});
+      if (!r.ok) throw new Error((await r.json()).error || 'HTTP ' + r.status);
+      el.textContent = '✅ 已备份到中央服务器 ' + new Date().toLocaleTimeString();
+      return;
+    }
     const cfg = ghCfg();
-    if (!cfg.token) return alert('先填 GitHub Token');
+    if (!cfg.token) return alert('先填 GitHub Token，或在 ⚙️ 填中央服务器地址');
     el.textContent = '正在备份…';
     const path = '/contents/data/' + encodeURIComponent(cfg.dev) + '.json';
     const old = await ghApi(path, cfg, 'GET');
@@ -1363,20 +1390,34 @@ async function cloudPull() {
   const el = document.getElementById('cloud_msg');
   try {
     saveGhCfg();
+    const addr = serverAddr();
+    if (addr) {  // 统一数据库优先
+      const base = addr.replace(/\/$/, '');
+      const c = await serverCred(base);
+      const r = await fetch(base + '/api/kv/get?name='
+        + encodeURIComponent(c.name) + '&secret=' + c.secret);
+      const j = await r.json();
+      if (!r.ok) throw new Error(j.error || 'HTTP ' + r.status);
+      await restoreAll(j.data, el);
+      return;
+    }
     const cfg = ghCfg();
-    if (!cfg.token) return alert('先填 GitHub Token');
+    if (!cfg.token) return alert('先填 GitHub Token，或在 ⚙️ 填中央服务器地址');
     el.textContent = '正在拉取…';
     const path = '/contents/data/' + encodeURIComponent(cfg.dev) + '.json';
     const j = await ghApi(path, cfg, 'GET');
     if (!j || !j.content) throw new Error('云端没有这个设备的数据');
     const bin = atob(j.content.replace(/\n/g, ''));
     const d = JSON.parse(new TextDecoder().decode(
-      Uint8Array.from(bin, c => c.charCodeAt(0))));
-    if (!confirm('用云端数据覆盖本机？（' + Object.keys(d).length + ' 项）')) return;
-    Object.entries(d).forEach(([k, v]) => localStorage.setItem(k, v));
-    el.textContent = '✅ 已恢复，正在刷新…';
-    location.reload();
+      Uint8Array.from(bin, c2 => c2.charCodeAt(0))));
+    await restoreAll(d, el);
   } catch (e) { el.textContent = '❌ 恢复失败：' + e.message; }
+}
+async function restoreAll(d, el) {
+  if (!confirm('用云端数据覆盖本机？（' + Object.keys(d).length + ' 项）')) return;
+  Object.entries(d).forEach(([k, v]) => localStorage.setItem(k, v));
+  el.textContent = '✅ 已恢复，正在刷新…';
+  location.reload();
 }
 // ---- /GitHub 云同步 ----
 
@@ -1774,8 +1815,20 @@ function saveConfig() {
   setInterval(pollPeers, 15000);
   dumpDebug(false);
   setInterval(() => dumpDebug(false), 60000);
-  // 后台自动云同步：每 10 分钟把快照交给 Java 层，服务每 6 小时推一次 GitHub
-  const autoSync = () => {
+  // 后台自动云同步：优先中央服务器（统一数据库），否则交给 Java 层走 GitHub
+  const autoSync = async () => {
+    const addr = serverAddr();
+    if (addr && localStorage.getItem('servercred')) {
+      try {
+        const base = addr.replace(/\/$/, '');
+        const c = JSON.parse(localStorage.getItem('servercred'));
+        await fetch(base + '/api/kv/put', {method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({name: c.name, secret: c.secret,
+            data: collectAll()})});
+      } catch (e) { /* 静默 */ }
+      return;
+    }
     if (window.CalAI && CalAI.syncNow && ghCfg().token)
       CalAI.syncNow(JSON.stringify(collectAll()));
   };
