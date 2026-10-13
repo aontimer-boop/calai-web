@@ -91,6 +91,14 @@
     <button class="btn ghost" style="margin-top:0;flex:1" onclick="importSave()">📥 导入存档</button>
   </div>
   <button class="btn ghost" style="margin-top:8px" onclick="dumpDebug(true)">🐞 导出调试数据（步数/爬楼原始值）</button>
+  <h3 style="margin-top:14px">云同步（GitHub 仓库当数据库）</h3>
+  <input type="password" id="gh_token" placeholder="GitHub Token（ghp_ 开头，只存本机）">
+  <input type="text" id="gh_dev" placeholder="设备名，如 phone">
+  <div style="display:flex;gap:8px">
+    <button class="btn ghost" style="margin-top:0;flex:1" onclick="cloudPush()">☁️ 备份到云端</button>
+    <button class="btn ghost" style="margin-top:0;flex:1" onclick="cloudPull()">⬇️ 从云端恢复</button>
+  </div>
+  <div id="cloud_msg" class="note" style="margin-top:6px"></div>
   <textarea id="backup_text" placeholder="导入时把存档文本粘贴到这里" style="width:100%;height:60px;margin-top:8px;border:1px solid #ddd;border-radius:8px;padding:8px;font-size:12px"></textarea>
   <div class="note">智谱 glm-4v-flash 免费：open.bigmodel.cn 注册即得 Key；base_url 填 https://open.bigmodel.cn/api/paas/v4</div>
 </div>
@@ -1299,6 +1307,76 @@ async function checkNasdaq() {
 }
 // ---- /聪明策略 ----
 
+// ---- GitHub 云同步：全部 localStorage 存成仓库里的一个 JSON 文件 ----
+const ghCfg = () => JSON.parse(localStorage.getItem('ghcfg') || '{}');
+function saveGhCfg() {
+  const token = document.getElementById('gh_token').value.trim();
+  const dev = document.getElementById('gh_dev').value.trim() || 'phone';
+  if (token) localStorage.setItem('ghcfg', JSON.stringify({token, dev}));
+}
+function b64encode(str) {
+  const bytes = new TextEncoder().encode(str);
+  let bin = '';
+  bytes.forEach(b => bin += String.fromCharCode(b));
+  return btoa(bin);
+}
+function collectAll() {
+  const d = {};
+  for (let i = 0; i < localStorage.length; i++) {
+    const k = localStorage.key(i);
+    d[k] = localStorage.getItem(k);
+  }
+  return d;
+}
+async function ghApi(path, cfg, method, body) {
+  const r = await fetch('https://api.github.com/repos/aontimer-boop/calai-web' + path, {
+    method: method || 'GET',
+    headers: {Authorization: 'token ' + cfg.token, 'Content-Type': 'application/json'},
+    body: body ? JSON.stringify(body) : undefined
+  });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok && r.status !== 404) throw new Error(j.message || ('HTTP ' + r.status));
+  return r.status === 404 ? null : j;
+}
+async function cloudPush() {
+  const el = document.getElementById('cloud_msg');
+  try {
+    saveGhCfg();
+    const cfg = ghCfg();
+    if (!cfg.token) return alert('先填 GitHub Token');
+    el.textContent = '正在备份…';
+    const path = '/contents/data/' + encodeURIComponent(cfg.dev) + '.json';
+    const old = await ghApi(path, cfg, 'GET');
+    const payload = {
+      message: 'CalAI sync ' + new Date().toISOString(),
+      content: b64encode(JSON.stringify(collectAll()))
+    };
+    if (old && old.sha) payload.sha = old.sha;
+    await ghApi(path, cfg, 'PUT', payload);
+    el.textContent = '✅ 已备份到云端 ' + new Date().toLocaleTimeString();
+  } catch (e) { el.textContent = '❌ 备份失败：' + e.message; }
+}
+async function cloudPull() {
+  const el = document.getElementById('cloud_msg');
+  try {
+    saveGhCfg();
+    const cfg = ghCfg();
+    if (!cfg.token) return alert('先填 GitHub Token');
+    el.textContent = '正在拉取…';
+    const path = '/contents/data/' + encodeURIComponent(cfg.dev) + '.json';
+    const j = await ghApi(path, cfg, 'GET');
+    if (!j || !j.content) throw new Error('云端没有这个设备的数据');
+    const bin = atob(j.content.replace(/\n/g, ''));
+    const d = JSON.parse(new TextDecoder().decode(
+      Uint8Array.from(bin, c => c.charCodeAt(0))));
+    if (!confirm('用云端数据覆盖本机？（' + Object.keys(d).length + ' 项）')) return;
+    Object.entries(d).forEach(([k, v]) => localStorage.setItem(k, v));
+    el.textContent = '✅ 已恢复，正在刷新…';
+    location.reload();
+  } catch (e) { el.textContent = '❌ 恢复失败：' + e.message; }
+}
+// ---- /GitHub 云同步 ----
+
 // ---- 健康财富战机 ----
 const war = () => Object.assign(
   {hp: 80, coins: 0, totalDown: 0, lastEval: '', downDay: '', todayPlanes: 0},
@@ -1685,6 +1763,9 @@ function saveConfig() {
   startWarGame();
   setInterval(renderWar, 15000);
   cfg_server.value = cfg().server || '';
+  const _gh = ghCfg();
+  if (_gh.token) gh_token.value = _gh.token;
+  gh_dev.value = _gh.dev || 'phone';
   reportAndRank();
   setInterval(reportAndRank, 60000);
   setInterval(pollPeers, 15000);
