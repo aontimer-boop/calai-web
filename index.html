@@ -83,7 +83,7 @@
   <input type="text" id="pf_a" placeholder="年龄，如 30">
   <input type="text" id="pf_s" placeholder="性别：男 / 女">
   <input type="text" id="pf_t" placeholder="目标体重 kg，如 62">
-  <input type="text" id="cfg_server" placeholder="中央服务器地址（可空，如 http://x.x.x.x:9000）">
+  <input type="text" id="cfg_server" placeholder="中央服务器（默认已填云端，清空可关闭）">
   <button class="btn" onclick="saveConfig()">保存</button>
   <h3 style="margin-top:14px">存档</h3>
   <div style="display:flex;gap:8px">
@@ -1527,7 +1527,12 @@ function renderWar() {
 // ---- /健康财富战机 ----
 
 // ---- 排名 + 存档 ----
-const serverAddr = () => cfg().server || '';
+const DEFAULT_SERVER = 'https://calai-sync.calai-boop.workers.dev';
+const serverAddr = () => {
+  const s = cfg().server;
+  if (s === undefined || s === null) return DEFAULT_SERVER;  // 默认：云上统一数据库
+  return s;  // 用户填了地址或明确清空（清空=不用服务器）
+};
 
 async function reportAndRank() {
   const w = war();
