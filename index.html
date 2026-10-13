@@ -1,0 +1,1696 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>CalAI - 拍照算热量</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: -apple-system, "PingFang SC", sans-serif; background: #f6f7f9; color: #1c1c1e; padding-bottom: 90px; }
+  header { background: #fff; padding: 16px; text-align: center; font-size: 20px; font-weight: 700; box-shadow: 0 1px 4px rgba(0,0,0,.06); position: sticky; top: 0; z-index: 9; }
+  .card { background: #fff; border-radius: 16px; margin: 14px; padding: 16px; box-shadow: 0 1px 4px rgba(0,0,0,.05); }
+  .kcal-big { font-size: 42px; font-weight: 800; }
+  .kcal-big small { font-size: 15px; font-weight: 400; color: #888; }
+  .bars { margin-top: 10px; }
+  .bar { display: flex; align-items: center; margin: 6px 0; font-size: 13px; }
+  .bar .name { width: 44px; color: #666; }
+  .bar .track { flex: 1; height: 8px; background: #eee; border-radius: 4px; margin: 0 8px; overflow: hidden; }
+  .bar .fill { height: 100%; border-radius: 4px; }
+  .p { background: #ff9f43; } .c { background: #2ecc71; } .f { background: #ff6b6b; }
+  .meal { display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid #f0f0f0; }
+  .meal:last-child { border-bottom: none; }
+  .meal .info { flex: 1; }
+  .meal .label { font-size: 15px; font-weight: 600; }
+  .meal .sub { font-size: 12px; color: #999; margin-top: 2px; }
+  .meal .kcal { font-weight: 700; color: #ff6b6b; margin-right: 10px; }
+  .del { color: #ccc; font-size: 18px; padding: 4px 8px; }
+  #fab { position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%); background: #1c1c1e; color: #fff; border: none; font-size: 16px; padding: 15px 34px; border-radius: 30px; box-shadow: 0 6px 20px rgba(0,0,0,.25); }
+  #preview { width: 100%; border-radius: 12px; margin-bottom: 10px; }
+  .food-row { display: flex; justify-content: space-between; font-size: 14px; padding: 8px 0; border-bottom: 1px dashed #eee; }
+  .food-row .g { color: #999; font-size: 12px; }
+  .btn { background: #1c1c1e; color: #fff; border: none; border-radius: 10px; padding: 12px; width: 100%; font-size: 15px; margin-top: 12px; }
+  .btn.ghost { background: #eee; color: #333; }
+  .note { font-size: 13px; color: #666; margin-top: 10px; line-height: 1.5; }
+  #settings { display: none; }
+  input[type=text], input[type=password] { width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 8px; margin: 6px 0; font-size: 14px; }
+  .spin { text-align: center; padding: 30px; color: #888; }
+  .err { color: #ff6b6b; font-size: 13px; margin-top: 8px; word-break: break-all; }
+  .gear { position: absolute; right: 16px; top: 18px; font-size: 18px; color: #999; }
+  h3 { font-size: 15px; margin-bottom: 8px; }
+  .plane { animation: fly 3s ease-in-out infinite; display: inline-block; }
+  @keyframes fly { 50% { transform: translateY(-14px) rotate(-6deg); } }
+  .war-card { background: linear-gradient(135deg, #1c1c2e, #2d3a4a); color: #fff; }
+  .war-card .note { color: #9fb8c8; }
+  .war-full { position: relative; height: 100vh; overflow: hidden; }
+  #warCanvas { width: 100%; height: 100%; display: block; }
+  .war-hud { position: absolute; top: 0; left: 0; right: 0; padding: 16px;
+             color: #fff; text-shadow: 0 1px 4px rgba(0,0,0,.8); }
+  .war-hpwrap { height: 14px; background: rgba(255,255,255,.15);
+                border-radius: 7px; margin-top: 10px; overflow: hidden; }
+  .war-msg { position: absolute; bottom: 16px; left: 0; right: 0; text-align: center;
+             color: #9fb8c8; font-size: 12px; text-shadow: 0 1px 3px #000; padding: 0 16px; }
+</style>
+</head>
+<body>
+<header style="display:none">📸 CalAI<span class="gear" onclick="toggleSettings()">⚙️</span></header>
+
+<div class="war-full">
+  <canvas id="warCanvas"></canvas>
+  <div class="war-hud">
+    <div style="display:flex;justify-content:space-between;font-size:15px">
+      <span>❤️ <b id="war_hp">80</b></span>
+      <span>🪙 <b id="war_coins">0</b></span>
+      <span>🏮 <b id="war_ingot">0</b></span>
+      <span>💥 <b id="war_down">0</b></span>
+      <span onclick="toggleAR()" id="ar_btn" style="cursor:pointer">📷</span>
+      <span onclick="toggleSettings()" style="cursor:pointer">⚙️</span>
+    </div>
+    <div class="war-hpwrap">
+      <div id="war_hpbar" style="height:100%;width:80%;background:linear-gradient(90deg,#ff6b6b,#ff9f43);border-radius:7px;transition:width .5s"></div>
+    </div>
+  </div>
+  <div class="war-msg" id="war_msg">每100步击落1架敌机 · 爬1层=3架 · 待机掉血 · 归零坠机清零</div>
+</div>
+
+<div class="card" id="settings">
+  <h3>模型 API 设置（OpenAI 兼容视觉接口）</h3>
+  <input type="text" id="cfg_url" placeholder="base_url">
+  <input type="password" id="cfg_key" placeholder="API Key">
+  <input type="text" id="cfg_model" placeholder="模型名">
+  <h3 style="margin-top:14px">身体档案（算基础代谢用）</h3>
+  <input type="text" id="pf_w" placeholder="体重 kg，如 70">
+  <input type="text" id="pf_h" placeholder="身高 cm，如 170">
+  <input type="text" id="pf_a" placeholder="年龄，如 30">
+  <input type="text" id="pf_s" placeholder="性别：男 / 女">
+  <input type="text" id="pf_t" placeholder="目标体重 kg，如 62">
+  <input type="text" id="cfg_server" placeholder="中央服务器地址（可空，如 http://x.x.x.x:9000）">
+  <button class="btn" onclick="saveConfig()">保存</button>
+  <h3 style="margin-top:14px">存档</h3>
+  <div style="display:flex;gap:8px">
+    <button class="btn ghost" style="margin-top:0;flex:1" onclick="exportSave()">📤 导出存档</button>
+    <button class="btn ghost" style="margin-top:0;flex:1" onclick="importSave()">📥 导入存档</button>
+  </div>
+  <button class="btn ghost" style="margin-top:8px" onclick="dumpDebug(true)">🐞 导出调试数据（步数/爬楼原始值）</button>
+  <textarea id="backup_text" placeholder="导入时把存档文本粘贴到这里" style="width:100%;height:60px;margin-top:8px;border:1px solid #ddd;border-radius:8px;padding:8px;font-size:12px"></textarea>
+  <div class="note">智谱 glm-4v-flash 免费：open.bigmodel.cn 注册即得 Key；base_url 填 https://open.bigmodel.cn/api/paas/v4</div>
+</div>
+
+<div class="card">
+  <h3>今日摄入</h3>
+  <div class="kcal-big" id="today_kcal">0<small> 千卡</small></div>
+  <div class="bars">
+    <div class="bar"><span class="name">蛋白质</span><div class="track"><div class="fill p" id="bar_p"></div></div><span id="txt_p">0g</span></div>
+    <div class="bar"><span class="name">碳水</span><div class="track"><div class="fill c" id="bar_c"></div></div><span id="txt_c">0g</span></div>
+    <div class="bar"><span class="name">脂肪</span><div class="track"><div class="fill f" id="bar_f"></div></div><span id="txt_f">0g</span></div>
+  </div>
+</div>
+
+<div class="card">
+  <h3>今日消耗与平衡 <span style="float:right;color:#999;font-weight:400" onclick="loadActivity()">↻</span></h3>
+  <div class="food-row"><span>基础代谢（躺平也烧）</span><b id="bmr">—</b></div>
+  <div class="food-row"><span>步数消耗 <span class="g" id="steps_n"></span></span><b id="steps_kcal">—</b></div>
+  <div class="food-row"><span>爬楼消耗 <span class="g" id="floors_n"></span></span><b id="climb_kcal">—</b></div>
+  <div class="food-row"><span><b>总消耗</b></span><b id="burn_total">—</b></div>
+  <div class="food-row"><span><b>热量缺口</b>（消耗−摄入）</span><b id="deficit">—</b></div>
+  <div class="food-row"><span>预计脂肪变化</span><b id="fat_change">—</b></div>
+  <button class="btn ghost" onclick="addFloors()">🏢 手动记爬楼（手机无气压计时用）</button>
+</div>
+
+<div class="card">
+  <h3>健康指标与评分</h3>
+  <div style="display:flex;gap:8px;align-items:center">
+    <select id="m_type" onchange="mTypeChange()" style="flex:1;padding:10px;border:1px solid #ddd;border-radius:8px;font-size:14px">
+      <option value="fbg">空腹血糖 (mmol/L)</option>
+      <option value="pbg">餐后2h血糖 (mmol/L)</option>
+      <option value="hba1c">糖化血红蛋白 (%)</option>
+      <option value="ua">尿酸 (μmol/L)</option>
+      <option value="bp">血压 (mmHg)</option>
+      <option value="ldl">低密度脂蛋白 (mmol/L)</option>
+      <option value="weight">体重 (kg)</option>
+    </select>
+  </div>
+  <div style="display:flex;gap:8px;margin-top:8px">
+    <input type="text" id="m_v1" placeholder="数值" style="flex:1">
+    <input type="text" id="m_v2" placeholder="舒张压" style="flex:1;display:none">
+  </div>
+  <button class="btn" onclick="addMetric()">记录</button>
+  <div class="kcal-big" style="margin-top:14px"><span id="health_score">—</span><small> 分 · 健康评分</small></div>
+  <div id="score_detail" class="note"></div>
+  <div id="hba1c_advice" class="note"></div>
+  <div id="metrics"></div>
+</div>
+
+<div class="card">
+  <h3>🏆 减重闯关</h3>
+  <div style="display:flex;justify-content:space-between;align-items:baseline">
+    <span id="lv_name" style="font-size:18px;font-weight:800">Lv.1 新手村</span>
+    <span id="streak" class="g" style="color:#999;font-size:12px"></span>
+  </div>
+  <div class="track" style="height:10px;background:#eee;border-radius:5px;margin:8px 0;overflow:hidden">
+    <div id="xp_bar" style="height:100%;background:#9b59b6;border-radius:5px;width:0%"></div>
+  </div>
+  <div id="xp_txt" class="note" style="margin-top:0"></div>
+  <button class="btn" id="checkin_btn" onclick="checkin()">✅ 今日打卡</button>
+  <div id="guide" class="note" style="background:#f0f9f4;padding:10px;border-radius:8px;margin-top:10px"></div>
+  <h3 style="margin-top:12px">里程碑</h3>
+  <div id="milestones" style="display:flex;flex-wrap:wrap;gap:8px"></div>
+</div>
+
+<div class="card">
+  <h3>🍱 日式减脂食谱（约 1500 千卡/天）</h3>
+  <div class="note" style="line-height:1.9">
+    <b>早餐 ~350 千卡</b>：小碗米饭 100g + 水煮蛋 1 个 + 无糖豆浆 1 杯 + 凉拌黄瓜<br>
+    <b>午餐 ~550 千卡</b>：米饭 150g + 清蒸鱼或烤秋刀鱼（一掌心大）+ 海带豆腐汤 + 焯拌青菜<br>
+    <b>晚餐 ~450 千卡</b>：半碗杂粮饭 + 鸡胸肉或豆腐 + 白灼蔬菜不限量 + 紫菜蛋花汤<br>
+    <b>加餐</b>：水果 1 个或坚果一小把；全天无糖茶/白水，含糖饮料归零<br>
+    <b>五条规矩</b>：① 八分饱就停 ② 油 ≤ 2.5 瓷勺/天，蒸煮焯烤代替炒 ③ 每餐蛋白质一掌心 ④ 先喝汤吃菜，最后吃饭 ⑤ 小碗小碟，吃完不添
+  </div>
+</div>
+
+<div class="card">
+  <h3>👥 好友监督</h3>
+  <div style="display:flex;gap:8px">
+    <button class="btn" style="margin-top:0;flex:1" onclick="sharePoster()">📸 生成战绩海报</button>
+    <button class="btn ghost" style="margin-top:0;flex:1" onclick="copyMyCode()">📋 复制打卡口令</button>
+  </div>
+  <div style="display:flex;gap:8px;margin-top:8px">
+    <input type="text" id="friend_code" placeholder="粘贴好友的打卡口令" style="flex:1">
+    <button class="btn" style="margin-top:0;width:auto;padding:10px 16px" onclick="addFriend()">添加</button>
+  </div>
+  <div class="food-row"><span>屏幕监控（无障碍服务）</span><b id="watch_status">检测中…</b></div>
+  <div style="display:flex;gap:8px;margin-top:8px">
+    <input type="text" id="wx_name" placeholder="我的微信昵称（识别自己发的朋友圈）" style="flex:1">
+    <button class="btn ghost" style="margin-top:0;width:auto;padding:10px 14px" onclick="openWatcher()">开启监控</button>
+  </div>
+  <div id="friends"></div>
+  <div class="note">玩法：每天把口令发到微信群，朋友粘贴进他的 App 就上榜。今天没打卡的好友会显示 ❌，点「催」生成文案去微信监督他。好友每有一人今日已打卡，你 +2 XP 监督奖励。</div>
+</div>
+
+<div class="card">
+  <h3>⚔️ 局域网对赌（同一 Wi-Fi，无服务器）</h3>
+  <div class="food-row"><span>我的局域网地址（发给好友）</span><b id="my_ip">获取中…</b></div>
+  <div style="display:flex;gap:8px;margin-top:8px">
+    <input type="text" id="peer_name" placeholder="好友昵称" style="flex:1">
+    <input type="text" id="peer_ip" placeholder="好友IP 如192.168.1.8" style="flex:1">
+    <button class="btn" style="margin-top:0;width:auto;padding:10px 14px" onclick="addPeer()">连接</button>
+  </div>
+  <div id="peers"></div>
+  <div style="display:flex;gap:8px;margin-top:8px">
+    <select id="bet_peer" style="flex:1;padding:10px;border:1px solid #ddd;border-radius:8px"></select>
+    <input type="text" id="bet_amount" placeholder="赌注¥/天" style="flex:1">
+    <button class="btn" style="margin-top:0;width:auto;padding:10px 14px" onclick="createBet()">开局</button>
+  </div>
+  <div id="bets"></div>
+  <div class="note">同一 Wi-Fi 下的 App 会<b>自动发现并互连</b>，无需任何操作（搜不到时再手动填 IP）。规则：每晚24点未打卡者判负，赔当天赌注给已打卡的对手，微信红包自行转账。裁决由两台手机本地比对打卡历史得出，平台不经手资金。</div>
+</div>
+
+<div class="card">
+  <h3>🏅 排行榜</h3>
+  <div class="note" id="rank_mode" style="margin-top:0">—</div>
+  <div id="rank_list"></div>
+</div>
+
+<div class="card">
+  <h3>💰 资金池</h3>
+  <div class="kcal-big" id="pool_total">¥0<small> 净盈亏</small></div>
+  <div id="pool_byfriend" class="note" style="margin-top:4px"></div>
+  <div id="ledger"></div>
+  <div class="note">裁决自动入账，微信红包线下结算。这里的数字是账本，平台不经手资金。</div>
+</div>
+
+<h2 style="margin:18px 4px 10px;font-size:18px">🏦 财富频道</h2>
+
+<div class="card">
+  <h3>💎 净资产总览</h3>
+  <div style="display:flex;gap:8px">
+    <input type="text" id="nw_fin" placeholder="金融资产 ¥（存款+基金）" style="flex:1.4">
+    <input type="text" id="nw_house" placeholder="房产估值 ¥（可空）" style="flex:1">
+    <button class="btn" style="margin-top:0;width:auto;padding:10px 14px" onclick="saveNW()">算</button>
+  </div>
+  <div id="nw_result" style="margin-top:10px"></div>
+</div>
+
+<div class="card">
+  <h3>🏠 房产决策器（持有 or 卖掉租房）</h3>
+  <div style="display:flex;gap:8px">
+    <input type="text" id="hp_price" placeholder="房子可成交价 ¥" style="flex:1.2">
+    <input type="text" id="hp_rent" placeholder="同小区月租 ¥" style="flex:1">
+    <button class="btn" style="margin-top:0;width:auto;padding:10px 14px" onclick="calcHouse()">算</button>
+  </div>
+  <div id="hp_result" style="margin-top:10px"></div>
+</div>
+
+<div class="card">
+  <h3>🏮 元宝（纳斯达克定投账户）</h3>
+  <div style="display:flex;gap:8px">
+    <input type="text" id="inv_p" placeholder="本金 ¥ 默认1000" style="flex:1">
+    <input type="text" id="inv_start" placeholder="起始日 2026-10-13" style="flex:1.4">
+    <input type="text" id="inv_r" placeholder="年化% 默认10" style="flex:1">
+    <button class="btn" style="margin-top:0;width:auto;padding:10px 14px" onclick="saveInvest()">设定</button>
+  </div>
+  <div class="kcal-big" id="inv_value" style="margin-top:10px">0 元宝</div>
+  <div id="inv_detail" class="note"></div>
+  <div class="note">元宝 = 买软件的 ¥1000 按纳斯达克年化 10% 复利增值的模拟账户，只涨不跌、坠机不清零。真实投资请用自己的支付宝/天天基金买纳斯达克100 QDII 基金。</div>
+</div>
+
+<div class="card">
+  <h3>🧠 聪明策略（200日均线防守）</h3>
+  <button class="btn" onclick="checkNasdaq()">📡 获取纳指信号</button>
+  <div id="nq_result" style="margin-top:10px"></div>
+  <div class="note">纪律：纳指在 200 日均线<b>上方</b> → 🟢 正常持有+定投；<b>跌破</b> → 🔴 防守：新增资金转稳健池，回线上再恢复。</div>
+  <div class="note" style="margin-top:6px">📊 <b>实测回测（纳指100，1991~2026 共 36 年）</b>：
+  死拿 年化 11.6%、最大回撤 −78%；均线择时 年化 10.9%、回撤 −49%；空仓期买货基 年化 11.4%、回撤 −46%。<br>
+  熊市对照：2008 死拿 −41% → 择时 −6.6%；2022 −33% → −8.4%。代价是 V 型反弹年会迟到（2020 +44% → +25%）。<br>
+  ⚙️ 执行要点：用纳指100 <b>C 类份额</b>（持有 7 天免赎回费），36 年切换 212 次也不被手续费吃掉。</div>
+  <div class="note" style="margin-top:6px">🍎 <b>单股实测（AAPL 1991~2026）</b>：择时年化 22.7% 还高于死拿 20.2%，回撤 −70% vs −89%。但有三坑：后视镜偏差（苹果曾差点倒闭）、单股黑天鹅躲不掉、每支股效果差异大。<b>单股只做卫星仓（≤10%），指数才是压舱石。</b></div>
+  <div class="note" style="margin-top:6px">⚠️ 它买的是风控不是收益：躲得开 2008/2022，躲不开震荡市（假信号是保费）。完全躲过下跌又吃满上涨的方法不存在——谁声称有，谁就是骗子。</div>
+</div>
+
+<div class="card">
+  <h3>💰 存款配置（三分法）</h3>
+  <div style="display:flex;gap:8px">
+    <input type="text" id="wa_total" placeholder="存款总额 ¥" style="flex:1">
+    <input type="text" id="wa_month" placeholder="每月生活费 ¥" style="flex:1">
+    <input type="text" id="wa_runway" placeholder="跑道月数" style="flex:0.8">
+    <button class="btn" style="margin-top:0;width:auto;padding:10px 14px" onclick="allocWealth()">分一下</button>
+  </div>
+  <div class="note" style="margin-top:6px">跑道月数：上班填 6，创业/自媒体填 24（两年没收入也不用卖纳指）</div>
+  <div id="wa_result" style="margin-top:10px"></div>
+</div>
+
+<div class="card" id="analyze_card" style="display:none">
+  <img id="preview">
+  <div id="result"></div>
+  <button class="btn" id="save_btn" onclick="saveMeal()">✓ 记录这一餐</button>
+  <button class="btn ghost" onclick="resetAnalyze()">重新拍照</button>
+</div>
+
+<div class="card">
+  <h3>今日记录</h3>
+  <div id="meals"><div class="note">还没有记录，点击下方按钮拍第一餐</div></div>
+</div>
+
+<input type="file" id="file" accept="image/*" capture="environment" style="display:none">
+<button id="fab" onclick="document.getElementById('file').click()">📷 拍照 / 相册</button>
+
+<script>
+const PROMPT = '你是专业营养师。分析这张照片中的食物。逐一识别每种食物，估算重量（克）、热量（千卡）、蛋白质/碳水/脂肪（克）。分量参考餐盘、筷子等常见物品估算。只输出 JSON，不要任何其他文字：\n' +
+'{"foods":[{"name":"名称","grams":数值,"kcal":数值,"protein":数值,"carb":数值,"fat":数值}],"note":"一句话总体评价"}\n' +
+'如果图中没有食物，返回 {"foods":[],"note":"未识别到食物"}。';
+
+let lastResult = null;
+
+const cfg = () => JSON.parse(localStorage.getItem('cfg') || '{}');
+const meals = () => JSON.parse(localStorage.getItem('meals') || '[]');
+const saveMeals = m => localStorage.setItem('meals', JSON.stringify(m));
+const today = () => new Date().toISOString().slice(0, 10);
+
+document.getElementById('file').addEventListener('change', async e => {
+  const f = e.target.files[0];
+  if (!f) return;
+  e.target.value = '';
+  const c = cfg();
+  if (!c.api_key) {
+    alert('先点右上角 ⚙️ 填入 API Key');
+    toggleSettings(true);
+    return;
+  }
+  const card = document.getElementById('analyze_card');
+  card.style.display = 'block';
+  const dataUrl = await new Promise(res => {
+    const r = new FileReader();
+    r.onload = () => res(r.result);
+    r.readAsDataURL(f);
+  });
+  document.getElementById('preview').src = dataUrl;
+  document.getElementById('result').innerHTML = '<div class="spin">AI 识别中，约 5-15 秒…</div>';
+  document.getElementById('save_btn').style.display = 'none';
+  card.scrollIntoView({behavior: 'smooth'});
+  try {
+    const r = await fetch(c.base_url.replace(/\/$/, '') + '/chat/completions', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json', 'Authorization': 'Bearer ' + c.api_key},
+      body: JSON.stringify({
+        model: c.model,
+        temperature: 0.2,
+        messages: [{role: 'user', content: [
+          {type: 'image_url', image_url: {url: dataUrl}},
+          {type: 'text', text: PROMPT}
+        ]}]
+      })
+    });
+    const resp = await r.json();
+    const text = resp.choices && resp.choices[0].message.content || '';
+    const m = text.match(/\{[\s\S]*\}/);
+    if (!m) throw new Error('模型返回异常: ' + text.slice(0, 200));
+    const data = JSON.parse(m[0]);
+    data.foods = data.foods || [];
+    data.totals = {};
+    for (const k of ['grams', 'kcal', 'protein', 'carb', 'fat'])
+      data.totals[k] = data.foods.reduce((s, f) => s + (+f[k] || 0), 0);
+    lastResult = data;
+    renderResult(data);
+  } catch (err) {
+    document.getElementById('result').innerHTML = '<div class="err">识别失败：' + err.message + '</div>';
+  }
+});
+
+function renderResult(d) {
+  if (!d.foods.length) {
+    document.getElementById('result').innerHTML = '<div class="note">' + (d.note || '未识别到食物') + '</div>';
+    return;
+  }
+  let h = d.foods.map(f =>
+    `<div class="food-row"><span>${f.name} <span class="g">~${Math.round(f.grams)}g</span></span><b>${Math.round(f.kcal)} 千卡</b></div>`
+  ).join('');
+  const t = d.totals;
+  h += `<div class="food-row"><span>合计</span><b>${Math.round(t.kcal)} 千卡</b></div>`;
+  h += `<div class="note">蛋白质 ${Math.round(t.protein)}g · 碳水 ${Math.round(t.carb)}g · 脂肪 ${Math.round(t.fat)}g</div>`;
+  if (d.note) h += `<div class="note">💡 ${d.note}</div>`;
+  document.getElementById('result').innerHTML = h;
+  document.getElementById('save_btn').style.display = 'block';
+}
+
+function saveMeal() {
+  if (!lastResult) return;
+  const t = lastResult.totals;
+  const list = meals();
+  list.unshift({
+    id: Date.now(), day: today(),
+    label: lastResult.foods.map(f => f.name).join('、').slice(0, 40) || '未命名',
+    kcal: t.kcal, protein: t.protein, carb: t.carb, fat: t.fat,
+    created: new Date().toTimeString().slice(0, 5)
+  });
+  saveMeals(list);
+  resetAnalyze();
+  loadToday();
+}
+
+function resetAnalyze() {
+  document.getElementById('analyze_card').style.display = 'none';
+  lastResult = null;
+}
+
+function loadToday() {
+  const list = meals().filter(m => m.day === today());
+  const t = {kcal: 0, protein: 0, carb: 0, fat: 0};
+  list.forEach(m => { t.kcal += m.kcal; t.protein += m.protein; t.carb += m.carb; t.fat += m.fat; });
+  document.getElementById('today_kcal').innerHTML = Math.round(t.kcal) + '<small> 千卡</small>';
+  const goals = {p: 120, c: 250, f: 70};
+  document.getElementById('bar_p').style.width = Math.min(100, t.protein / goals.p * 100) + '%';
+  document.getElementById('bar_c').style.width = Math.min(100, t.carb / goals.c * 100) + '%';
+  document.getElementById('bar_f').style.width = Math.min(100, t.fat / goals.f * 100) + '%';
+  document.getElementById('txt_p').textContent = Math.round(t.protein) + 'g';
+  document.getElementById('txt_c').textContent = Math.round(t.carb) + 'g';
+  document.getElementById('txt_f').textContent = Math.round(t.fat) + 'g';
+  document.getElementById('meals').innerHTML = list.length ? list.map(m =>
+    `<div class="meal"><div class="info"><div class="label">${m.label}</div>
+     <div class="sub">${m.created} · 蛋${Math.round(m.protein)}/碳${Math.round(m.carb)}/脂${Math.round(m.fat)}g</div></div>
+     <span class="kcal">${Math.round(m.kcal)}</span>
+     <span class="del" onclick="delMeal(${m.id})">×</span></div>`
+  ).join('') : '<div class="note">还没有记录，点击下方按钮拍第一餐</div>';
+  loadActivity();
+}
+
+function delMeal(id) {
+  saveMeals(meals().filter(m => m.id !== id));
+  loadToday();
+}
+
+function toggleSettings(force) {
+  const s = document.getElementById('settings');
+  const show = force === true || s.style.display === 'none';
+  s.style.display = show ? 'block' : 'none';
+  if (show) s.scrollIntoView({behavior: 'smooth'});
+}
+
+const profile = () => Object.assign({w: 70, h: 170, a: 30, s: '男', t: 0},
+  JSON.parse(localStorage.getItem('profile') || '{}'));
+
+function bmr() {
+  const p = profile();
+  return 10 * p.w + 6.25 * p.h - 5 * p.a + (p.s === '女' ? -161 : 5);
+}
+
+// 食物热效应按营养素加权：消化蛋白质耗 25%、碳水 7.5%、脂肪 2.5%
+// 不吃米饭只吃菜：菜若高蛋白 TEF 反升，若多油 TEF 降且油热量高
+function tefOf(list) {
+  let pk = 0, ck = 0, fk = 0;
+  list.forEach(m => {
+    pk += (m.protein || 0) * 4;
+    ck += (m.carb || 0) * 4;
+    fk += (m.fat || 0) * 9;
+  });
+  return pk * 0.25 + ck * 0.075 + fk * 0.025;
+}
+
+function loadActivity() {
+  const act = (window.CalAI && CalAI.getActivity)
+    ? JSON.parse(CalAI.getActivity())
+    : {steps: 0, climbMeters: 0, hasStepSensor: false, hasBarometer: false};
+  const w = profile().w;
+  const stepsKcal = act.steps * w * 0.00053;
+  const floors = act.climbMeters / 3;
+  const climbKcal = floors * w * 0.028;
+  const todayMeals = meals().filter(m => m.day === today());
+  const intake = todayMeals.reduce((s, m) => s + m.kcal, 0);
+  const total = bmr() + stepsKcal + climbKcal + tefOf(todayMeals);
+  const deficit = total - intake;
+  document.getElementById('bmr').textContent = Math.round(bmr()) + ' 千卡';
+  document.getElementById('steps_n').textContent = act.hasStepSensor
+    ? act.steps + ' 步 ≈ ' + (act.steps * 0.7 / 1000).toFixed(1) + 'km' : '无计步传感器';
+  document.getElementById('steps_kcal').textContent = Math.round(stepsKcal) + ' 千卡';
+  document.getElementById('floors_n').textContent = act.hasBarometer
+    ? floors.toFixed(1) + ' 层' : '无气压计，请手动记';
+  document.getElementById('climb_kcal').textContent = Math.round(climbKcal) + ' 千卡';
+  document.getElementById('burn_total').textContent = Math.round(total) + ' 千卡';
+  const d = document.getElementById('deficit');
+  d.textContent = (deficit >= 0 ? '−' : '+') + Math.round(Math.abs(deficit)) + ' 千卡';
+  d.style.color = deficit >= 0 ? '#2ecc71' : '#ff6b6b';
+  const fat = document.getElementById('fat_change');
+  fat.textContent = (deficit >= 0 ? '减 ' : '增 ') + Math.abs(deficit / 7.7).toFixed(0) + ' 克';
+  fat.style.color = deficit >= 0 ? '#2ecc71' : '#ff6b6b';
+  if (typeof renderScore === 'function') renderScore();
+}
+
+function addFloors() {
+  const n = prompt('爬了几层？', '10');
+  if (!n) return;
+  if (window.CalAI && CalAI.addClimbFloors) CalAI.addClimbFloors(parseInt(n) || 0);
+  else {
+    const extra = JSON.parse(localStorage.getItem('manualFloors') || '{}');
+    extra[today()] = (extra[today()] || 0) + (parseInt(n) || 0);
+    localStorage.setItem('manualFloors', JSON.stringify(extra));
+  }
+  loadActivity();
+}
+
+// ---- 调试导出：把今日原始数据写到 下载/calai_debug.json，供本机程序读取 ----
+function dumpDebug(showAlert) {
+  if (!window.CalAI || !CalAI.dumpDebug) {
+    if (showAlert) alert('需要在 CalAI App 里运行');
+    return;
+  }
+  try {
+    const act = JSON.parse(CalAI.getActivity ? CalAI.getActivity() : '{}');
+    const raw = JSON.parse(CalAI.getRawPrefs ? CalAI.getRawPrefs() : '{}');
+    const p = profile();
+    const stepsKcal = (act.steps || 0) * p.w * 0.00053;
+    const floors = (act.climbMeters || 0) / 3;
+    const climbKcal = floors * p.w * 0.028;
+    const intakeList = meals().filter(m => m.day === today());
+    const intake = intakeList.reduce((s, m) => s + m.kcal, 0);
+    const burn = bmr() + stepsKcal + climbKcal + tefOf(intakeList);
+    const data = {
+      导出时间: new Date().toLocaleString(),
+      传感器原始数据: raw,
+      今日活动: {步数: act.steps || 0, 爬楼米数: act.climbMeters || 0,
+        爬楼层数: +floors.toFixed(1),
+        有计步器: !!act.hasStepSensor, 有气压计: !!act.hasBarometer},
+      身体档案: p,
+      热量计算: {基础代谢: Math.round(bmr()), 走路消耗: Math.round(stepsKcal),
+        爬楼消耗: Math.round(climbKcal), 食物热效应: Math.round(tefOf(intakeList)),
+        总消耗: Math.round(burn),
+        今日摄入: Math.round(intake), 热量缺口: Math.round(burn - intake),
+        预计脂肪变化克: +((burn - intake) / 7.7).toFixed(1)},
+      今日餐食: intakeList,
+      手动补记楼层: JSON.parse(localStorage.getItem('manualFloors') || '{}'),
+      今日打卡: checkins().filter(c => c.day === today()),
+      战机状态: war(),
+      投资账户: invest()
+    };
+    const r = CalAI.dumpDebug(JSON.stringify(data, null, 2));
+    if (showAlert)
+      alert(r && r.indexOf('ERROR') === 0 ? '导出失败：' + r
+        : '已导出到 下载/' + r + '\n步数 ' + (act.steps || 0) + ' · 爬楼 '
+          + floors.toFixed(1) + ' 层 · 运动消耗 ' + Math.round(stepsKcal + climbKcal) + ' 千卡');
+    return r;
+  } catch (e) {
+    if (showAlert) alert('导出失败：' + e.message);
+  }
+}
+
+// ---- 健康指标 ----
+const METRICS_META = {
+  fbg:    {name: '空腹血糖', unit: 'mmol/L', ref: '<6.1'},
+  pbg:    {name: '餐后2h血糖', unit: 'mmol/L', ref: '<7.8'},
+  hba1c:  {name: '糖化血红蛋白', unit: '%', ref: '<5.7'},
+  ua:     {name: '尿酸', unit: 'μmol/L', ref: '男<420 女<360'},
+  bp:     {name: '血压', unit: 'mmHg', ref: '<120/80'},
+  ldl:    {name: '低密度脂蛋白', unit: 'mmol/L', ref: '<3.4'},
+  weight: {name: '体重', unit: 'kg', ref: 'BMI 18.5-24'},
+};
+const metrics = () => JSON.parse(localStorage.getItem('metrics') || '[]');
+const saveMetrics = m => localStorage.setItem('metrics', JSON.stringify(m));
+
+function mTypeChange() {
+  document.getElementById('m_v2').style.display =
+    document.getElementById('m_type').value === 'bp' ? 'block' : 'none';
+}
+
+function metricLevel(type, v1, v2) {  // 0 正常 1 偏高 2 超标
+  const p = profile();
+  if (type === 'fbg') return v1 < 6.1 ? 0 : v1 < 7.0 ? 1 : 2;
+  if (type === 'pbg') return v1 < 7.8 ? 0 : v1 < 11.1 ? 1 : 2;
+  if (type === 'hba1c') return v1 < 5.7 ? 0 : v1 < 6.5 ? 1 : 2;
+  if (type === 'ua') { const lim = p.s === '女' ? 360 : 420; return v1 < lim ? 0 : v1 < lim + 60 ? 1 : 2; }
+  if (type === 'bp') return (v1 < 120 && v2 < 80) ? 0 : (v1 < 140 && v2 < 90) ? 1 : 2;
+  if (type === 'ldl') return v1 < 3.4 ? 0 : v1 < 4.1 ? 1 : 2;
+  if (type === 'weight') {
+    const bmi = v1 / Math.pow(p.h / 100, 2);
+    return (bmi >= 18.5 && bmi < 24) ? 0 : bmi < 28 ? 1 : 2;
+  }
+  return 0;
+}
+
+function addMetric() {
+  const type = m_type.value, v1 = parseFloat(m_v1.value), v2 = parseFloat(m_v2.value);
+  if (!v1) return alert('请输入数值');
+  if (type === 'bp' && !v2) return alert('血压需要填收缩压和舒张压');
+  const list = metrics();
+  list.unshift({id: Date.now(), day: today(), type, v1, v2: v2 || null,
+    created: new Date().toTimeString().slice(0, 5)});
+  saveMetrics(list);
+  m_v1.value = ''; m_v2.value = '';
+  renderMetrics();
+}
+
+function delMetric(id) {
+  saveMetrics(metrics().filter(m => m.id !== id));
+  renderMetrics();
+}
+
+function renderMetrics() {
+  const list = metrics();
+  const colors = ['#2ecc71', '#ff9f43', '#ff6b6b'];
+  const names = ['正常', '偏高', '超标'];
+  document.getElementById('metrics').innerHTML = list.slice(0, 20).map(m => {
+    const lv = metricLevel(m.type, m.v1, m.v2);
+    const meta = METRICS_META[m.type];
+    const val = m.type === 'bp' ? `${m.v1}/${m.v2}` : m.v1;
+    return `<div class="meal"><div class="info"><div class="label">${meta.name}
+      <span style="color:${colors[lv]}">● ${names[lv]}</span></div>
+      <div class="sub">${m.day} ${m.created} · 参考 ${meta.ref}</div></div>
+      <span class="kcal">${val}<small style="font-weight:400;color:#999"> ${meta.unit}</small></span>
+      <span class="del" onclick="delMetric(${m.id})">×</span></div>`;
+  }).join('') || '<div class="note">还没有指标记录</div>';
+  renderScore();
+  renderAdvice();
+  if (typeof renderGame === 'function') renderGame();
+}
+
+function renderScore() {
+  const p = profile();
+  const items = [];
+  const bmi = p.w / Math.pow(p.h / 100, 2);
+  items.push(['BMI ' + bmi.toFixed(1), bmi >= 18.5 && bmi < 24 ? 25 : bmi < 28 ? 15 : 5, 25]);
+  const intakeList2 = meals().filter(m => m.day === today());
+  const intake = intakeList2.reduce((s, m) => s + m.kcal, 0);
+  const act = (window.CalAI && CalAI.getActivity) ? JSON.parse(CalAI.getActivity()) : {steps: 0, climbMeters: 0};
+  const burn = bmr() + act.steps * p.w * 0.00053 + act.climbMeters / 3 * p.w * 0.028 + tefOf(intakeList2);
+  const deficit = burn - intake;
+  items.push(['热量缺口 ' + Math.round(deficit) + '千卡', deficit >= 0 ? 25 : deficit > -300 ? 15 : 5, 25]);
+  const exerciseOk = act.steps >= 6000 || act.climbMeters >= 30;
+  items.push(['运动 ' + act.steps + '步/' + (act.climbMeters / 3).toFixed(0) + '层',
+    exerciseOk ? 25 : act.steps >= 3000 ? 15 : 5, 25]);
+  const recent = ['fbg', 'hba1c', 'ua', 'bp', 'ldl'].map(t => metrics().find(m => m.type === t)).filter(Boolean);
+  const bad = recent.filter(m => metricLevel(m.type, m.v1, m.v2) > 0).length;
+  items.push(recent.length
+    ? ['指标 ' + (recent.length - bad) + '/' + recent.length + ' 项正常', bad === 0 ? 25 : bad === 1 ? 15 : 5, 25]
+    : ['暂无指标记录', 15, 25]);
+  const total = items.reduce((s, i) => s + i[1], 0);
+  document.getElementById('health_score').textContent = total;
+  document.getElementById('health_score').style.color =
+    total >= 80 ? '#2ecc71' : total >= 60 ? '#ff9f43' : '#ff6b6b';
+  document.getElementById('score_detail').innerHTML =
+    items.map(i => `${i[0]}：${i[1]}/${i[2]}分`).join('<br>');
+}
+
+function renderAdvice() {
+  const el = document.getElementById('hba1c_advice');
+  const list = metrics();
+  const last = t => list.find(m => m.type === t);
+  const daysSince = m => Math.floor((Date.now() - new Date(m.day)) / 86400000);
+  const lastA1c = last('hba1c'), lastFbg = last('fbg');
+  const abnormal = (lastA1c && lastA1c.v1 >= 5.7) || (lastFbg && lastFbg.v1 >= 6.1);
+  // 家族史（糖尿病+心脑血管）筛查计划：血压月测、血糖年测（偏高改3个月）、血脂年测
+  const rows = [
+    ['🩸 血压（家用血压计，每月≥2次）', last('bp'), 30, '<130/80'],
+    ['🍬 空腹血糖+糖化（' + (abnormal ? '偏高：3个月一次' : '每年一次') + '）',
+      lastA1c || lastFbg, abnormal ? 90 : 365, '空腹<6.1 · 糖化<5.7%'],
+    ['🧈 血脂四项（每年体检加一项）', last('ldl'), 365, 'LDL<3.4'],
+  ];
+  let html = '📋 <b>家族史监测计划</b>（糖尿病+心脑血管）：<br>';
+  rows.forEach(([label, m, cycle, ref]) => {
+    if (!m) {
+      html += `${label}：⚠️ 还没测过，先摸底一次（目标 ${ref}）<br>`;
+    } else {
+      const left = cycle - daysSince(m);
+      html += left > 0
+        ? `${label}：✅ ${m.day} 已测，${left} 天后到期<br>`
+        : `${label}：🔴 已超期 ${-left} 天，尽快去测（目标 ${ref}）<br>`;
+    }
+  });
+  if (abnormal)
+    html += '⚠️ 血糖偏高：建议配指尖血糖仪（几十元），每天测空腹+三餐后2h血糖并记录。';
+  el.innerHTML = html;
+}
+// ---- /健康指标 ----
+
+// ---- 减重闯关 ----
+const checkins = () => JSON.parse(localStorage.getItem('checkins') || '[]');
+const saveCheckins = c => localStorage.setItem('checkins', JSON.stringify(c));
+const LEVELS = [[0,'新手村'],[50,'起步行'],[120,'小火苗'],[220,'习惯萌芽'],[350,'稳步前进'],
+  [520,'燃脂学徒'],[750,'自律达人'],[1050,'铁人意志'],[1450,'王者之路'],[2000,'传说']];
+
+function latestWeight() {
+  const r = metrics().find(m => m.type === 'weight');
+  return r ? r.v1 : profile().w;
+}
+
+function streak() {
+  const days = new Set(checkins().map(c => c.day));
+  let n = 0;
+  const d = new Date();
+  if (!days.has(d.toISOString().slice(0, 10))) d.setDate(d.getDate() - 1);  // 今天没打不算断
+  while (days.has(d.toISOString().slice(0, 10))) { n++; d.setDate(d.getDate() - 1); }
+  return n;
+}
+
+const MILESTONES = [
+  {id: 'first',    icon: '🎯', name: '首次打卡',   test: c => c.length >= 1},
+  {id: 'streak3',  icon: '🔥', name: '连续3天',    test: () => streak() >= 3},
+  {id: 'streak7',  icon: '💪', name: '连续7天',    test: () => streak() >= 7},
+  {id: 'streak30', icon: '👑', name: '连续30天',   test: () => streak() >= 30},
+  {id: 'lose1',    icon: '⚖️', name: '减重1kg',   test: () => weightLost() >= 1},
+  {id: 'lose3',    icon: '🏅', name: '减重3kg',   test: () => weightLost() >= 3},
+  {id: 'lose5',    icon: '🏆', name: '减重5kg',   test: () => weightLost() >= 5},
+  {id: 'goal',     icon: '🏁', name: '达成目标',   test: () => profile().t > 0 && latestWeight() <= profile().t},
+  {id: 'def500',   icon: '🚀', name: '单日缺口500', test: c => c.some(x => x.deficit >= 500)},
+  {id: 'steps15k', icon: '👟', name: '日行1.5万步', test: c => c.some(x => x.steps >= 15000)},
+  {id: 'floors20', icon: '🏢', name: '一日20层',   test: c => c.some(x => x.floors >= 20)},
+  {id: 'social1',  icon: '🤝', name: '交到盟友',   test: () => friends().length >= 1},
+  {id: 'social3',  icon: '📣', name: '呼朋唤友',   test: () => friends().length >= 3},
+  {id: 'earn1',    icon: '💰', name: '首笔入账',   test: () => ledger().some(l => l.amount > 0)},
+  {id: 'invest100', icon: '📈', name: '收益破百',  test: () => {
+    const i = invest();
+    if (!i) return false;
+    const days = (Date.now() - new Date(i.start)) / 86400000;
+    return i.p * Math.pow(1 + i.r / 100, days / 365) - i.p >= 100;
+  }},
+  {id: 'ace100',   icon: '🛩️', name: '击落百机',  test: () => war().totalDown >= 100},
+];
+
+function weightLost() {
+  const ws = metrics().filter(m => m.type === 'weight');
+  if (ws.length < 2) return 0;
+  return Math.max(0, ws[ws.length - 1].v1 - ws[0].v1);  // 最早 - 最新
+}
+
+function calcXp(c) {
+  const weightDays = new Set(metrics().filter(m => m.type === 'weight').map(m => m.day)).size;
+  const unlocked = MILESTONES.filter(m => m.test(c)).length;
+  const social = friends().filter(f => f.d === today()).length * 2;  // 监督奖励
+  const verified = c.some(x => x.day === today() && x.verified) ? 10 : 0;  // 朋友圈公开验证
+  return {xp: c.length * 10 + weightDays * 5 + unlocked * 20 + social + verified, unlocked};
+}
+
+function checkin(verified) {
+  const list = checkins();
+  const existing = list.find(c => c.day === today());
+  if (existing) {
+    if (verified && !existing.verified) {
+      existing.verified = true;
+      saveCheckins(list);
+      renderGame();
+    }
+    return;
+  }
+  const act = (window.CalAI && CalAI.getActivity) ? JSON.parse(CalAI.getActivity()) : {steps: 0, climbMeters: 0};
+  const w = profile().w;
+  const todayList = meals().filter(m => m.day === today());
+  const intake = todayList.reduce((s, m) => s + m.kcal, 0);
+  const burn = bmr() + act.steps * w * 0.00053 + act.climbMeters / 3 * w * 0.028 + tefOf(todayList);
+  list.push({day: today(), deficit: Math.round(burn - intake),
+    steps: act.steps, floors: act.climbMeters / 3, weight: latestWeight(),
+    verified: !!verified});
+  saveCheckins(list);
+  renderGame();
+}
+
+function renderGame() {
+  const c = checkins();
+  const {xp} = calcXp(c);
+  let lv = 0;
+  for (let i = 0; i < LEVELS.length; i++) if (xp >= LEVELS[i][0]) lv = i;
+  const [base, name] = LEVELS[lv];
+  const next = LEVELS[lv + 1];
+  document.getElementById('lv_name').textContent = 'Lv.' + (lv + 1) + ' ' + name;
+  document.getElementById('streak').textContent = '🔥 连续 ' + streak() + ' 天';
+  if (next) {
+    document.getElementById('xp_bar').style.width = Math.min(100, (xp - base) / (next[0] - base) * 100) + '%';
+    document.getElementById('xp_txt').textContent = xp + ' XP · 距 Lv.' + (lv + 2) + '「' + next[1] + '」还差 ' + (next[0] - xp) + ' XP';
+  } else {
+    document.getElementById('xp_bar').style.width = '100%';
+    document.getElementById('xp_txt').textContent = xp + ' XP · 已满级！';
+  }
+  const done = c.some(x => x.day === today());
+  const btn = document.getElementById('checkin_btn');
+  btn.textContent = done ? '✓ 今日已打卡' : '✅ 今日打卡';
+  btn.disabled = done;
+  btn.style.opacity = done ? 0.5 : 1;
+
+  document.getElementById('milestones').innerHTML = MILESTONES.map(m => {
+    const on = m.test(c);
+    return `<div style="text-align:center;width:62px;opacity:${on ? 1 : 0.3};filter:${on ? 'none' : 'grayscale(1)'}">
+      <div style="font-size:24px">${m.icon}</div>
+      <div style="font-size:11px;color:#666">${m.name}</div></div>`;
+  }).join('');
+
+  // 温和指南
+  const p = profile();
+  const w = latestWeight();
+  const act = (window.CalAI && CalAI.getActivity) ? JSON.parse(CalAI.getActivity()) : {steps: 0, climbMeters: 0};
+  const guideList = meals().filter(m => m.day === today());
+  const tdee = bmr() + act.steps * p.w * 0.00053 + act.climbMeters / 3 * p.w * 0.028 + tefOf(guideList);
+  const budget = Math.round(tdee - 400);
+  const weeklyLoss = (400 * 7 / 7700).toFixed(2);
+  let guide = `📖 <b>今日温和指南</b>（无负担节奏：每天只缺 400 千卡，每周约减 ${weeklyLoss}kg，不挨饿）<br>` +
+    `🍚 今日摄入预算：<b>${budget} 千卡</b>（蛋白质 ≥ ${Math.round(p.w * 1.2)}g 保肌肉）<br>` +
+    `👟 步数目标 6000+ 或爬楼 10 层<br>💧 饮水 2000ml · 😴 睡够 7 小时（熬夜促进食欲激素）`;
+  if (p.t > 0 && w > p.t) {
+    const weeks = Math.ceil((w - p.t) / (400 * 7 / 7700));
+    guide += `<br>🎯 当前 ${w}kg → 目标 ${p.t}kg，按此节奏预计 <b>${weeks} 周</b>达成`;
+  } else if (p.t <= 0) {
+    guide += '<br>💡 在 ⚙️ 里填目标体重，给你算预计达成时间';
+  }
+  document.getElementById('guide').innerHTML = guide;
+  pushStatus();
+}
+// ---- /减重闯关 ----
+
+// ---- 好友监督 ----
+const friends = () => JSON.parse(localStorage.getItem('friends') || '[]');
+const saveFriends = f => localStorage.setItem('friends', JSON.stringify(f));
+const myName = () => {
+  let n = localStorage.getItem('myname');
+  if (!n) { n = prompt('你的昵称（会显示在好友的榜单上）：') || '匿名'; localStorage.setItem('myname', n); }
+  return n;
+};
+
+function myLevel() {
+  const {xp} = calcXp(checkins());
+  let lv = 0;
+  for (let i = 0; i < LEVELS.length; i++) if (xp >= LEVELS[i][0]) lv = i;
+  return lv + 1;
+}
+
+function copyMyCode() {
+  const code = 'CALAI-' + btoa(unescape(encodeURIComponent(JSON.stringify({
+    n: myName(), d: today(), s: streak(), l: myLevel(), w: +weightLost().toFixed(1)
+  }))));
+  copyText(code);
+  alert('口令已复制，去微信粘贴给好友吧：\n\n' + code.slice(0, 40) + '…');
+}
+
+function copyText(t) {
+  if (window.CalAI && CalAI.copyText) return CalAI.copyText(t);
+  const ta = document.createElement('textarea');
+  ta.value = t; document.body.appendChild(ta); ta.select();
+  document.execCommand('copy'); ta.remove();
+}
+
+function addFriend() {
+  const raw = document.getElementById('friend_code').value.trim();
+  document.getElementById('friend_code').value = '';
+  try {
+    if (!raw.startsWith('CALAI-')) throw 0;
+    const d = JSON.parse(decodeURIComponent(escape(atob(raw.slice(6)))));
+    if (!d.n || !d.d) throw 0;
+    const list = friends().filter(f => f.n !== d.n);
+    list.unshift(d);
+    saveFriends(list);
+    renderFriends();
+    renderGame();
+  } catch (e) { alert('口令无效，让好友重新复制完整的'); }
+}
+
+function urge(name) {
+  copyText(name + '，今天你还没打卡哦！我在 CalAI 已经连击 ' + streak() + ' 天了，别让队伍掉队 💪');
+  alert('催促文案已复制，去微信粘贴发给他');
+}
+
+function delFriend(n) {
+  saveFriends(friends().filter(f => f.n !== n));
+  renderFriends();
+  renderGame();
+}
+
+function friendBonusToday() {
+  return friends().filter(f => f.d === today()).length * 2;
+}
+
+function renderFriends() {
+  const list = friends();
+  document.getElementById('friends').innerHTML = list.length ? list.map(f => {
+    const done = f.d === today();
+    return `<div class="meal"><div class="info"><div class="label">${f.n}
+      <span style="color:${done ? '#2ecc71' : '#ff6b6b'}">${done ? ' ✅已打卡' : ' ❌未打卡'}</span></div>
+      <div class="sub">Lv.${f.l} · 🔥${f.s}天 · 已减${f.w}kg · 口令日期 ${f.d}</div></div>
+      ${done ? '' : `<span class="del" style="color:#ff9f43" onclick="urge('${f.n}')">催</span>`}
+      <span class="del" onclick="delFriend('${f.n}')">×</span></div>`;
+  }).join('') : '<div class="note">还没有好友，复制你的口令发给微信好友互相监督</div>';
+}
+
+function sharePoster() {
+  const cvs = document.createElement('canvas');
+  cvs.width = 750; cvs.height = 1100;
+  const x = cvs.getContext('2d');
+  const g = x.createLinearGradient(0, 0, 0, 1100);
+  g.addColorStop(0, '#1c1c2e'); g.addColorStop(1, '#2d4a3e');
+  x.fillStyle = g; x.fillRect(0, 0, 750, 1100);
+  x.fillStyle = '#fff'; x.textAlign = 'center';
+  x.font = 'bold 44px sans-serif';
+  x.fillText('CalAI 减重打卡', 375, 110);
+  x.font = '26px sans-serif'; x.fillStyle = '#9fd8b4';
+  x.fillText(today() + ' · ' + myName(), 375, 160);
+  const {xp, unlocked} = calcXp(checkins());
+  x.fillStyle = '#ffd966'; x.font = 'bold 90px sans-serif';
+  x.fillText('Lv.' + myLevel() + ' ' + LEVELS[myLevel() - 1][1], 375, 300);
+  x.fillStyle = '#fff'; x.font = 'bold 60px sans-serif';
+  x.fillText('🔥 连续打卡 ' + streak() + ' 天', 375, 410);
+  const c = checkins();
+  const todayC = c.find(v => v.day === today());
+  x.font = '32px sans-serif'; x.fillStyle = '#cfe8d8';
+  const lines = [
+    '累计 XP：' + xp + ' · 里程碑 ' + unlocked + '/' + MILESTONES.length,
+    '已减重：' + weightLost().toFixed(1) + ' kg（当前 ' + latestWeight() + 'kg）',
+    todayC ? '今日热量缺口：' + todayC.deficit + ' 千卡 · ' + todayC.steps + ' 步 · ' + todayC.floors.toFixed(0) + ' 层'
+           : '今日尚未打卡',
+  ];
+  lines.forEach((t, i) => x.fillText(t, 375, 500 + i * 55));
+  x.font = '40px sans-serif';
+  x.fillText(MILESTONES.filter(m => m.test(c)).map(m => m.icon).join(' '), 375, 720);
+  x.fillStyle = '#9fd8b4'; x.font = 'italic 30px sans-serif';
+  x.fillText('温和减重，每天进步一点点', 375, 800);
+  x.fillText('扫码不如和我一起打卡 → 口令在 CalAI 里生成', 375, 850);
+  const b64 = cvs.toDataURL('image/png').split(',')[1];
+  if (window.CalAI && CalAI.savePoster) {
+    const r = CalAI.savePoster(b64);
+    alert(r.startsWith('ERROR') ? '保存失败：' + r : '海报已存到相册/Download（' + r + '），去微信朋友圈发吧！');
+  } else {
+    const a = document.createElement('a');
+    a.href = 'data:image/png;base64,' + b64; a.download = 'calai.png'; a.click();
+  }
+}
+function openWatcher() {
+  if (!(window.CalAI && CalAI.openWatcherSettings)) return;
+  if (CalAI.watcherEnabled()) alert('监控已开启，朋友圈打卡会被自动识别');
+  else CalAI.openWatcherSettings();
+}
+
+function loadWatch() {
+  if (!(window.CalAI && CalAI.getWatch)) return;
+  document.getElementById('watch_status').textContent =
+    CalAI.watcherEnabled() ? '🟢 监控中' : '🔴 未开启';
+  const w = JSON.parse(CalAI.getWatch());
+  if (w.day !== today() || !w.names.length) return;
+  const wx = localStorage.getItem('wxname') || '';
+  let changed = false;
+  const list = friends();
+  w.names.forEach(name => {
+    if (wx && name === wx) {  // 识别到自己发的朋友圈 → 打卡公开验证
+      const cl = checkins();
+      const t = cl.find(c => c.day === today());
+      if (!t || !t.verified) {
+        checkin(true);
+        alert('🎉 识别到你的朋友圈打卡！今日打卡已公开验证 +10 XP');
+      }
+      return;
+    }
+    const f = list.find(x => x.n === name);
+    if (f && f.d !== today()) { f.d = today(); changed = true; }
+    else if (!f) { list.unshift({n: name, d: today(), s: 1, l: 1, w: 0, auto: true}); changed = true; }
+  });
+  if (changed) { saveFriends(list); renderFriends(); renderGame(); }
+}
+// ---- /好友监督 ----
+
+// ---- 局域网对赌 ----
+const lanPeers = () => JSON.parse(localStorage.getItem('lanPeers') || '[]');
+const saveLanPeers = p => localStorage.setItem('lanPeers', JSON.stringify(p));
+const bets = () => JSON.parse(localStorage.getItem('bets') || '[]');
+const saveBets = b => localStorage.setItem('bets', JSON.stringify(b));
+const peerCache = {};  // ip -> {status json | null}
+
+function pushStatus() {
+  if (!(window.CalAI && CalAI.updateStatus)) return;
+  const c = checkins();
+  const t = c.find(x => x.day === today());
+  const w = war();
+  CalAI.updateStatus(JSON.stringify({
+    ok: true, n: localStorage.getItem('myname') || '匿名', d: today(),
+    checked: !!t, verified: !!(t && t.verified),
+    streak: streak(), lv: myLevel(), wlost: +weightLost().toFixed(1),
+    deficit: t ? t.deficit : null,
+    steps: t ? t.steps : 0, floors: t ? +t.floors.toFixed(1) : 0,
+    xp: calcXp(c).xp, coins: w.coins, down: w.totalDown, hp: Math.round(w.hp),
+    hist: c.slice(-7).map(x => ({d: x.day, deficit: x.deficit}))
+  }));
+}
+
+function addPeer() {
+  const n = peer_name.value.trim(), ip = peer_ip.value.trim();
+  if (!n || !/^[\d.]+$/.test(ip)) return alert('填昵称和 IP');
+  const list = lanPeers().filter(p => p.ip !== ip);
+  list.unshift({n, ip});
+  saveLanPeers(list);
+  peer_name.value = ''; peer_ip.value = '';
+  pollPeers(true);
+}
+
+function delPeer(ip) {
+  saveLanPeers(lanPeers().filter(p => p.ip !== ip));
+  saveBets(bets().filter(b => b.ip !== ip));
+  pollPeers(true);
+}
+
+async function pollPeers(force) {
+  // 自动发现：合并 UDP 广播听到的同类 App
+  if (window.CalAI && CalAI.getDiscovered) {
+    const found = JSON.parse(CalAI.getDiscovered());
+    const cur = lanPeers();
+    let changed = false;
+    found.forEach(f => {
+      const ex = cur.find(p => p.ip === f.ip);
+      if (!ex) { cur.push({n: f.n, ip: f.ip, auto: true}); changed = true; }
+      else if (ex.auto && ex.n !== f.n) { ex.n = f.n; changed = true; }
+    });
+    if (changed) saveLanPeers(cur);
+  }
+  const list = lanPeers();
+  document.getElementById('bet_peer').innerHTML =
+    list.map(p => `<option value="${p.ip}">${p.n}</option>`).join('') ||
+    '<option value="">先添加好友</option>';
+  await Promise.all(list.map(async p => {
+    try {
+      const ctrl = new AbortController();
+      setTimeout(() => ctrl.abort(), 3000);
+      const r = await fetch(`http://${p.ip}:9477/status`, {signal: ctrl.signal});
+      peerCache[p.ip] = await r.json();
+    } catch (e) { peerCache[p.ip] = null; }
+  }));
+  renderPeers();
+  renderBets();
+}
+
+function renderPeers() {
+  document.getElementById('peers').innerHTML = lanPeers().map(p => {
+    const s = peerCache[p.ip];
+    if (!s) return `<div class="meal"><div class="info"><div class="label">${p.n}
+      <span style="color:#999"> 📴离线</span></div>
+      <div class="sub">${p.ip} · 不在同一Wi-Fi或对方没开App</div></div>
+      <span class="del" onclick="delPeer('${p.ip}')">×</span></div>`;
+    return `<div class="meal"><div class="info"><div class="label">${s.n}
+      <span style="color:${s.checked ? '#2ecc71' : '#ff6b6b'}">${s.checked ? ' ✅已打卡' : ' ❌未打卡'}</span>
+      ${s.verified ? '<span style="color:#9b59b6"> 已朋友圈验证</span>' : ''}
+      ${p.auto ? '<span style="color:#999"> · 自动发现</span>' : ''}</div>
+      <div class="sub">Lv.${s.lv} · 🔥${s.streak}天 · 缺口${s.deficit ?? '—'}千卡 · ${s.steps}步/${s.floors}层</div></div>
+      <span class="del" onclick="delPeer('${p.ip}')">×</span></div>`;
+  }).join('') || '<div class="note">添加同一 Wi-Fi 下好友的手机 IP 即可互联</div>';
+}
+
+function createBet() {
+  const ip = bet_peer.value, amt = parseFloat(bet_amount.value);
+  if (!ip || !amt) return alert('选好友、填赌注');
+  const p = lanPeers().find(x => x.ip === ip);
+  const list = bets();
+  list.unshift({id: Date.now(), ip, name: p.n, bet: amt, start: today()});
+  saveBets(list);
+  bet_amount.value = '';
+  renderBets();
+}
+
+function renderBets() {
+  settleBets();
+  document.getElementById('bets').innerHTML = bets().map(b => {
+    const s = peerCache[b.ip];
+    let verdict = '<span style="color:#999">等对方上线后判定</span>';
+    if (s) {
+      const y = new Date(); y.setDate(y.getDate() - 1);
+      const yday = y.toISOString().slice(0, 10);
+      const myHist = checkins().some(x => x.day === yday);
+      const peerHist = (s.hist || []).some(h => h.d === yday);
+      if (yday >= b.start) {
+        if (myHist && peerHist) verdict = '<span style="color:#2ecc71">昨日双方都打卡，平局</span>';
+        else if (myHist && !peerHist) verdict = `<span style="color:#2ecc71">昨日TA未打卡，TA应转你 ¥${b.bet}</span>`;
+        else if (!myHist && peerHist) verdict = `<span style="color:#ff6b6b">昨日你未打卡，应转TA ¥${b.bet}</span>`;
+        else verdict = '<span style="color:#999">昨日双方都缺卡，互不欠</span>';
+      } else verdict = '<span style="color:#999">今日开局，明日出首判</span>';
+    }
+    return `<div class="meal"><div class="info"><div class="label">⚔️ ${b.name} · ¥${b.bet}/天</div>
+      <div class="sub">${verdict}</div></div>
+      <span class="del" onclick="delBet(${b.id})">×</span></div>`;
+  }).join('');
+}
+
+function delBet(id) {
+  saveBets(bets().filter(b => b.id !== id));
+  renderBets();
+}
+// ---- /局域网对赌 ----
+
+// ---- 资金池 ----
+const ledger = () => JSON.parse(localStorage.getItem('ledger') || '[]');
+const saveLedger = l => localStorage.setItem('ledger', JSON.stringify(l));
+
+function settleBets() {
+  const entries = ledger();
+  const y = new Date(); y.setDate(y.getDate() - 1);
+  const yesterday = y.toISOString().slice(0, 10);
+  let changed = false;
+  bets().forEach(b => {
+    const s = peerCache[b.ip];
+    if (!s) return;
+    (s.hist || []).forEach(h => {
+      if (h.d < b.start || h.d > yesterday) return;
+      if (entries.some(e => e.betId === b.id && e.day === h.d)) return;
+      const meIn = checkins().some(x => x.day === h.d);
+      const peerIn = true;  // h 存在即对方当天已打卡
+      let amount = 0, note = '平局';
+      if (meIn && !peerIn) { amount = b.bet; note = '对方缺卡'; }
+      else if (!meIn && peerIn) { amount = -b.bet; note = '我缺卡'; }
+      // 对方历史里没有这一天且我也没有 → 双方都缺卡，不记账
+      entries.push({betId: b.id, day: h.d, friend: b.name, amount, note});
+      changed = true;
+    });
+    // 我打了卡但对方历史没这天 → 对方缺卡
+    checkins().forEach(x => {
+      if (x.day < b.start || x.day > yesterday) return;
+      if (entries.some(e => e.betId === b.id && e.day === x.day)) return;
+      if ((s.hist || []).some(h => h.d === x.day)) return;
+      entries.push({betId: b.id, day: x.day, friend: b.name, amount: b.bet, note: '对方缺卡'});
+      changed = true;
+    });
+  });
+  if (changed) saveLedger(entries);
+  renderLedger();
+}
+
+function renderLedger() {
+  const entries = ledger();
+  const total = entries.reduce((s, e) => s + e.amount, 0);
+  const el = document.getElementById('pool_total');
+  el.innerHTML = (total >= 0 ? '+¥' : '−¥') + Math.abs(total).toFixed(0) +
+    '<small> 净盈亏</small>';
+  el.style.color = total >= 0 ? '#2ecc71' : '#ff6b6b';
+  const byFriend = {};
+  entries.forEach(e => {
+    byFriend[e.friend] = (byFriend[e.friend] || 0) + e.amount;
+  });
+  document.getElementById('pool_byfriend').innerHTML = Object.entries(byFriend)
+    .map(([n, v]) => `${n}：${v >= 0 ? '+' : '−'}¥${Math.abs(v)}`).join(' · ');
+  document.getElementById('ledger').innerHTML = entries.slice().reverse()
+    .slice(0, 30).map(e =>
+      `<div class="food-row"><span>${e.day} · vs ${e.friend} <span class="g">${e.note}</span></span>
+      <b style="color:${e.amount > 0 ? '#2ecc71' : e.amount < 0 ? '#ff6b6b' : '#999'}">
+      ${e.amount > 0 ? '+¥' + e.amount : e.amount < 0 ? '−¥' + Math.abs(e.amount) : '¥0'}</b></div>`
+    ).join('') || '<div class="note">还没有入账记录，开个赌局明天见分晓</div>';
+}
+// ---- /资金池 ----
+
+// ---- 纳斯达克模拟账户 ----
+const invest = () => JSON.parse(localStorage.getItem('invest') || 'null');
+
+function saveInvest() {
+  const p = parseFloat(inv_p.value), r = parseFloat(inv_r.value) || 10;
+  const start = inv_start.value || today();
+  if (!p) return alert('填本金');
+  localStorage.setItem('invest', JSON.stringify({p, start, r}));
+  renderInvest();
+}
+
+function renderInvest() {
+  let inv = invest();
+  if (!inv) {  // 默认：买软件的 ¥1000 从今天起按纳斯达克年化 10% 增值
+    inv = {p: 1000, start: today(), r: 10};
+    localStorage.setItem('invest', JSON.stringify(inv));
+    inv_p.value = inv.p; inv_start.value = inv.start; inv_r.value = inv.r;
+  }
+  const days = Math.max(0, (Date.now() - new Date(inv.start)) / 86400000);
+  const value = inv.p * Math.pow(1 + inv.r / 100, days / 365);
+  const gain = value - inv.p;
+  const dailyGain = inv.p * (inv.r / 100) / 365 * Math.pow(1 + inv.r / 100, days / 365);
+  document.getElementById('inv_value').innerHTML =
+    Math.floor(value) + '<small> 元宝</small>';
+  document.getElementById('inv_value').style.color = '#c0392b';
+  // 双复利对照：财富线（纳斯达克年化10%）vs 健康线（每天-400千卡）
+  const proj = [1, 5, 10, 20].map(y =>
+    `${y}年 <b>${Math.floor(inv.p * Math.pow(1 + inv.r / 100, y))}</b>`).join(' · ');
+  const p0 = profile();
+  const wNow = latestWeight() || p0.w;
+  const weeklyLoss = 400 * 7 / 7700;
+  const weeksTxt = (p0.t > 0 && wNow > p0.t)
+    ? `${wNow.toFixed(1)}kg → ${p0.t}kg 约 <b>${Math.ceil((wNow - p0.t) / weeklyLoss)} 周</b>`
+    : '已达标或未设目标体重';
+  document.getElementById('inv_detail').innerHTML =
+    `本金 ¥${inv.p} · 年化 ${inv.r}% · 已运行 ${Math.floor(days)} 天<br>` +
+    `累计收益 <b style="color:#2ecc71">+${gain.toFixed(2)} 元宝</b> · 每天约 +${dailyGain.toFixed(2)} 元宝<br>` +
+    `📈 财富复利：${proj}<br>` +
+    `❤️ 健康复利：每天 −400 千卡 ≈ 每周 −0.36kg，${weeksTxt}<br>` +
+    `💡 小额 × 每天 × 不间断 = 时间放大。走路就是健康的定投。`;
+  const wi = document.getElementById('war_ingot');
+  if (wi) wi.textContent = Math.floor(value);
+}
+// ---- /纳斯达克模拟账户 ----
+
+// ---- 存款配置（三分法）----
+function allocWealth() {
+  const total = parseFloat(document.getElementById('wa_total').value);
+  const monthly = parseFloat(document.getElementById('wa_month').value);
+  const runway = parseFloat(document.getElementById('wa_runway').value) || 6;
+  if (!total || !monthly) return alert('填存款总额和每月生活费');
+  localStorage.setItem('wealth', JSON.stringify({total, monthly, runway}));
+  renderWealth();
+}
+
+function renderWealth() {
+  const wcfg = JSON.parse(localStorage.getItem('wealth') || 'null');
+  const el = document.getElementById('wa_result');
+  if (!wcfg) {
+    el.innerHTML = '<div class="note">输入存款总额和每月生活费，帮你分成三个账户</div>';
+    return;
+  }
+  document.getElementById('wa_total').value = wcfg.total;
+  document.getElementById('wa_month').value = wcfg.monthly;
+  document.getElementById('wa_runway').value = wcfg.runway || 6;
+  const runway = wcfg.runway || 6;
+  const emergency = Math.min(wcfg.total, wcfg.monthly * runway);  // 跑道金：雷打不动
+  const rest = wcfg.total - emergency;
+  const stable = Math.round(rest * 0.4);
+  const growth = rest - stable;
+  const monthlyBuy = Math.round(growth / 24);
+  const fire = Math.round(wcfg.total * 0.04 / 12);  // 4% 法则：每月可花的安全线
+  el.innerHTML =
+    `<div class="food-row"><span>🛟 跑道金（货基/短债，${runway} 个月生活费）</span><b>¥${emergency}</b></div>` +
+    `<div class="food-row"><span>🏦 稳健池（债基/大额存单，年化 2~3%）</span><b>¥${stable}</b></div>` +
+    `<div class="food-row"><span>📈 增值池（纳斯达克100 QDII，分 24 个月定投）</span><b>¥${growth}</b></div>` +
+    `<div class="note">定投节奏：每月买 ¥${monthlyBuy}，跌了别卖。跑道金没耗尽前绝不动增值池。<br>` +
+    `🔥 4% 法则参考：¥${wcfg.total} 资产 ≈ 每月可安全支取 <b>¥${fire}</b>——生活费压在这条线以内，本金永远花不完。<br>` +
+    `仅作参考，不构成投资建议。</div>`;
+}
+// ---- /存款配置 ----
+
+// ---- 净资产总览 + 房产决策器 ----
+function saveNW() {
+  const fin = parseFloat(document.getElementById('nw_fin').value);
+  const house = parseFloat(document.getElementById('nw_house').value) || 0;
+  if (!fin) return alert('填金融资产（存款+基金+理财）');
+  localStorage.setItem('nw', JSON.stringify({fin, house}));
+  renderNW();
+}
+
+function renderNW() {
+  const c = JSON.parse(localStorage.getItem('nw') || 'null');
+  const el = document.getElementById('nw_result');
+  if (!c) {
+    el.innerHTML = '<div class="note">金融资产 = 存款+基金+理财；房产按当前可成交价估</div>';
+    return;
+  }
+  document.getElementById('nw_fin').value = c.fin;
+  document.getElementById('nw_house').value = c.house || '';
+  const free = Math.round(c.fin * 0.04 / 12);
+  el.innerHTML =
+    `<div class="food-row"><span>净资产（金融资产 ¥${c.fin} + 房产 ¥${c.house}）</span><b>¥${c.fin + c.house}</b></div>` +
+    `<div class="food-row"><span>🔥 自由线（金融资产 × 4% ÷ 12）</span><b>¥${free}/月</b></div>` +
+    `<div class="note">生活费压在自由线以内，本金理论上花不完。自住房不产生现金流，不计入自由线。</div>`;
+}
+
+function calcHouse() {
+  const price = parseFloat(document.getElementById('hp_price').value);
+  const rent = parseFloat(document.getElementById('hp_rent').value);
+  if (!price || !rent) return alert('填房子可成交价和同小区月租金');
+  localStorage.setItem('house', JSON.stringify({price, rent}));
+  renderHouse();
+}
+
+function renderHouse() {
+  const c = JSON.parse(localStorage.getItem('house') || 'null');
+  const el = document.getElementById('hp_result');
+  if (!c) {
+    el.innerHTML = '<div class="note">输入房子当前可成交价和同小区月租金，算租售比</div>';
+    return;
+  }
+  document.getElementById('hp_price').value = c.price;
+  document.getElementById('hp_rent').value = c.rent;
+  const ratio = c.rent * 12 / c.price * 100;
+  const diff = Math.round(c.price * 0.10 - c.rent * 12);
+  const verdict = ratio < 2
+    ? '📊 租售比 < 2%：长期算账「卖掉+租房」大概率更划算——但卖得的钱要分批进场（≥24个月），先留足跑道金'
+    : ratio < 3
+      ? '📊 租售比 2~3%：持有和卖掉差别不大，出租收现金流、继续观望即可'
+      : '📊 租售比 > 3%：这房子现金流不错，倾向持有收租';
+  el.innerHTML =
+    `<div class="food-row"><span>租售比（年租金 ÷ 房价）</span><b>${ratio.toFixed(2)}%</b></div>` +
+    `<div class="food-row"><span>卖掉改投纳指的年预期差（10% − 房租）</span><b>+¥${diff}/年</b></div>` +
+    `<div class="note">${verdict}<br>⚠️ 弱势市场卖房可能被砍价 5~15%、成交周期 6~12 个月；建议先出租试一年再决定。不构成投资建议。</div>`;
+}
+// ---- /净资产总览 ----
+
+// ---- 聪明策略：200日均线防守信号 ----
+function renderNasdaqSignal(cur, ma, note) {
+  const diff = (cur / ma - 1) * 100;
+  const above = cur >= ma;
+  document.getElementById('nq_result').innerHTML =
+    (note ? `<div class="note">${note}</div>` : '') +
+    `<div class="food-row"><span>纳指最新 / 200日均线</span><b>${Math.round(cur)} / ${Math.round(ma)}</b></div>` +
+    `<div class="food-row"><span>偏离均线</span><b style="color:${above ? '#2ecc71' : '#ff6b6b'}">${diff >= 0 ? '+' : ''}${diff.toFixed(1)}%</b></div>` +
+    `<div class="food-row"><span>信号</span><b>${above
+      ? '🟢 线上：正常持有 + 照常定投'
+      : '🔴 线下：防守！新增资金转稳健池，回到线上再恢复'}</b></div>`;
+}
+
+function manualNasdaq() {
+  const cur = parseFloat(document.getElementById('nq_cur').value);
+  const ma = parseFloat(document.getElementById('nq_ma').value);
+  if (!cur || !ma) return alert('填当前点位和200日均线（雪球/支付宝搜纳斯达克100能看到）');
+  renderNasdaqSignal(cur, ma, '手动输入数据');
+}
+
+async function checkNasdaq() {
+  const el = document.getElementById('nq_result');
+  el.innerHTML = '<div class="note">正在获取纳指数据…</div>';
+  try {
+    const r = await fetch('https://push2his.eastmoney.com/api/qt/stock/kline/get?secid=100.NDX&fields1=f1,f2,f3,f4,f5,f6&fields2=f51,f53&klt=101&fqt=0&beg=19850101&end=20261231');
+    const d = await r.json();
+    const closes = d.data.klines.map(k => parseFloat(k.split(',')[1])).filter(v => v > 0);
+    if (closes.length < 50) throw new Error('数据太短');
+    const last = closes[closes.length - 1];
+    const win = closes.slice(-200);
+    const ma200 = win.reduce((s, v) => s + v, 0) / win.length;
+    renderNasdaqSignal(last, ma200, '数据源：东方财富 · 截至最新收盘');
+  } catch (e) {
+    el.innerHTML = '<div class="note">⚠️ 自动获取失败（网络问题）。改手动：</div>' +
+      '<div style="display:flex;gap:8px;margin-top:6px">' +
+      '<input type="text" id="nq_cur" placeholder="纳指当前点位" style="flex:1">' +
+      '<input type="text" id="nq_ma" placeholder="200日均线" style="flex:1">' +
+      '<button class="btn" style="margin-top:0;width:auto;padding:10px 14px" onclick="manualNasdaq()">算</button></div>';
+  }
+}
+// ---- /聪明策略 ----
+
+// ---- 健康财富战机 ----
+const war = () => Object.assign(
+  {hp: 80, coins: 0, totalDown: 0, lastEval: '', downDay: '', todayPlanes: 0},
+  JSON.parse(localStorage.getItem('war') || '{}'));
+const saveWar = w => localStorage.setItem('war', JSON.stringify(w));
+
+function evalWar() {
+  const w = war();
+  const y = new Date(); y.setDate(y.getDate() - 1);
+  const yday = y.toISOString().slice(0, 10);
+  if (w.lastEval >= yday) return w;
+  const c = checkins();
+  if (c.length > 0) {  // 有过打卡记录才开始结算昨日
+    const rec = c.find(x => x.day === yday);
+    if (rec) {
+      w.hp += 10;                                    // 打卡回血
+      if (rec.deficit >= 0) w.hp += 10;              // 缺口达标回血
+      if (rec.steps >= 6000 || rec.floors >= 10) w.hp += 10;  // 运动回血
+      if (rec.deficit < -500) w.hp -= 15;            // 暴食扣血
+    } else {
+      w.hp -= 10;                                    // 缺卡扣血（待机衰减另算）
+    }
+    w.hp = Math.min(100, w.hp);
+    if (w.hp <= 0) crash(w);
+  }
+  w.lastEval = yday;
+  saveWar(w);
+  return w;
+}
+
+function crash(w) {
+  if (w.coins > 0) w.justCrashed = true;
+  w.coins = 0;                                       // 坠机：财富清零
+  w.hp = 50;                                         // 复活
+}
+
+function renderWar() {
+  const w = evalWar();
+  const act = (window.CalAI && CalAI.getActivity)
+    ? JSON.parse(CalAI.getActivity()) : {steps: 0, climbMeters: 0};
+  const planes = Math.floor(act.steps / 100) + Math.floor(act.climbMeters / 3) * 3;
+  const now = Date.now();
+
+  // 待机掉血：步数没涨的每一小时 −1 HP
+  if (!w.lastTick) { w.lastTick = now; w.lastSteps = act.steps; }
+  if (act.steps === w.lastSteps) {
+    const idleHours = (now - w.lastTick) / 3600000;
+    if (idleHours >= 0.004) {                        // ~每15秒结算一次
+      w.hp -= idleHours;
+      w.lastTick = now;
+    }
+  } else {
+    w.lastSteps = act.steps;
+    w.lastTick = now;
+  }
+
+  if (w.downDay !== today()) { w.down = 0; w.todayPlanes = 0; w.downDay = today(); }
+  if (planes > w.todayPlanes) {
+    const delta = planes - w.todayPlanes;
+    const rate = Math.max(1, Math.round(w.hp / 5));  // 血量决定收益率
+    w.todayPlanes = planes;
+    w.down = (w.down || 0) + delta;
+    w.coins += delta * rate;
+    w.totalDown += delta;
+    w.hp = Math.min(100, w.hp + delta);              // 击落回血
+    saveWar(w);
+  }
+  if (w.hp <= 0) crash(w);
+  w.hp = Math.min(100, w.hp);
+
+  // 台阶加分：气压高度换算（0.16m/级），视觉识别到楼梯双倍
+  if (w.stairMDay !== today()) {
+    w.stairM = act.climbMeters;
+    w.stairSteps = 0;
+    w.stairMDay = today();
+  }
+  const dm = act.climbMeters - (w.stairM || 0);
+  if (dm > 0.05) {
+    const stepsNew = dm / 0.16;
+    const mult = stairVis.on ? 2 : 1;
+    w.coins += Math.round(stepsNew * mult);
+    w.stairSteps = (w.stairSteps || 0) + stepsNew;
+    w.stairM = act.climbMeters;
+  }
+  saveWar(w);
+  document.getElementById('war_hp').textContent = Math.round(w.hp);
+  const bar = document.getElementById('war_hpbar');
+  bar.style.width = w.hp + '%';
+  bar.style.background = w.hp > 50
+    ? 'linear-gradient(90deg,#2ecc71,#27ae60)'
+    : w.hp > 25 ? 'linear-gradient(90deg,#ff9f43,#e67e22)'
+    : 'linear-gradient(90deg,#ff6b6b,#c0392b)';
+  document.getElementById('war_coins').textContent = w.coins;
+  if (!WG) document.getElementById('war_down').textContent = w.down || 0;
+  const rate = Math.max(1, Math.round(w.hp / 5));
+  document.getElementById('war_msg').textContent =
+    `当前血量 ${Math.round(w.hp)} → 每架 +${rate}🪙 · 今日台阶 ${Math.floor(w.stairSteps || 0)} 级 · 待机掉血 · 归零坠机`;
+  if (w.justCrashed) {
+    w.justCrashed = false;
+    saveWar(w);
+    alert('💥 坠机！血条归零，金币清零。50 血复活，重新开始！');
+  }
+}
+// ---- /健康财富战机 ----
+
+// ---- 排名 + 存档 ----
+const serverAddr = () => cfg().server || '';
+
+async function reportAndRank() {
+  const w = war();
+  const me = {name: localStorage.getItem('myname') || '匿名',
+    xp: calcXp(checkins()).xp, coins: w.coins, down: w.totalDown,
+    streak: streak(), hp: Math.round(w.hp)};
+  const addr = serverAddr();
+  if (addr) {
+    try {
+      const base = addr.replace(/\/$/, '');
+      const ctrl = new AbortController();
+      setTimeout(() => ctrl.abort(), 4000);
+      await fetch(base + '/api/rank/report', {method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(me), signal: ctrl.signal});
+      const d = await (await fetch(base + '/api/rank', {signal: ctrl.signal})).json();
+      renderRank(d.rank, '中央服务器排名（每60秒上报）', me.name);
+      return;
+    } catch (e) { /* 掉到局域网模式 */ }
+  }
+  const rows = [Object.assign({mine: true}, me)];
+  lanPeers().forEach(p => {
+    const s = peerCache[p.ip];
+    if (s && s.ok) rows.push({name: s.n, xp: s.xp || 0, coins: s.coins || 0,
+      down: s.down || 0, streak: s.streak || 0, hp: s.hp || 0});
+  });
+  rows.sort((a, b) => b.xp - a.xp);
+  renderRank(rows, addr ? '⚠️ 服务器离线，当前为局域网排名' : '局域网排名（设置中央服务器后可全球排名）', me.name);
+}
+
+function renderRank(rows, mode, myname) {
+  document.getElementById('rank_mode').textContent = mode;
+  const medal = ['🥇', '🥈', '🥉'];
+  document.getElementById('rank_list').innerHTML = rows.map((r, i) =>
+    `<div class="food-row"><span>${medal[i] || (i + 1) + '.'} ${r.name}${r.name === myname ? ' <span class="g">(我)</span>' : ''}</span>
+    <b>${r.xp} XP <span class="g">🪙${r.coins} 💥${r.down} 🔥${r.streak}</span></b></div>`
+  ).join('') || '<div class="note">暂无数据</div>';
+}
+
+const BACKUP_KEYS = ['cfg', 'profile', 'meals', 'metrics', 'checkins', 'friends',
+  'lanPeers', 'bets', 'ledger', 'invest', 'war', 'myname', 'wxname', 'manualFloors'];
+
+function exportSave() {
+  const o = {calai_backup: true};
+  BACKUP_KEYS.forEach(k => {
+    const v = localStorage.getItem(k);
+    if (v !== null) o[k] = v;
+  });
+  copyText(JSON.stringify(o));
+  alert('存档已复制到剪贴板，粘贴到微信文件传输助手或备忘录保存');
+}
+
+function importSave() {
+  const t = document.getElementById('backup_text').value.trim();
+  try {
+    const o = JSON.parse(t);
+    if (!o.calai_backup) throw 0;
+    BACKUP_KEYS.forEach(k => {
+      if (o[k] !== undefined) localStorage.setItem(k, o[k]);
+    });
+    alert('导入成功，即将刷新');
+    location.reload();
+  } catch (e) { alert('存档无效，请粘贴完整的存档文本'); }
+}
+// ---- /排名 + 存档 ----
+
+// ---- 战机 Canvas 画面 ----
+let WG = null;
+
+function startWarGame() {
+  const cvs = document.getElementById('warCanvas');
+  WG = {cvs, ctx: cvs.getContext('2d'), enemies: [], bullets: [], booms: [],
+        visualDown: 0, t: 0};
+  WG.visualDown = war().down || 0;
+  const resize = () => { cvs.width = cvs.clientWidth * 2; cvs.height = cvs.clientHeight * 2; };
+  resize();
+  addEventListener('resize', resize);
+  requestAnimationFrame(warFrame);
+}
+
+function warFrame() {
+  const {cvs, ctx} = WG, W = cvs.width, H = cvs.height;
+  const k = H / 440;  // 全屏缩放系数
+  WG.t++;
+  const w = war();
+  const pending = (w.down || 0) - WG.visualDown - WG.enemies.length;
+  if (pending > 0 && WG.enemies.length < 3 && WG.t % 25 === 0) {
+    WG.enemies.push({x: 60 * k + Math.random() * (W - 120 * k), y: -40 * k,
+                     vy: (1.5 + Math.random() * 1.5) * k,
+                     vx: (Math.random() - 0.5) * 1.5 * k});
+  }
+  const px = W / 2 + Math.sin(WG.t / 50) * W * 0.22, py = H - 60 * k;
+  if (WG.t % 20 === 0) analyzeStairs();
+  if (WG.enemies.length && WG.t % 16 === 0) {
+    const e = WG.enemies[0];
+    const dx = e.x - px, dy = e.y - py, d = Math.hypot(dx, dy) || 1;
+    WG.bullets.push({x: px, y: py - 24 * k, vx: dx / d * 16 * k, vy: dy / d * 16 * k});
+  }
+  WG.enemies.forEach(e => { e.x += e.vx; e.y += e.vy; });
+  WG.enemies = WG.enemies.filter(e => e.y < H + 60 * k);
+  WG.bullets.forEach(b => { b.x += b.vx; b.y += b.vy; });
+  WG.bullets = WG.bullets.filter(b => b.x > -20 && b.x < W + 20 && b.y > -20 && b.y < H + 20);
+  for (let bi = WG.bullets.length - 1; bi >= 0; bi--) {
+    const b = WG.bullets[bi];
+    for (let ei = WG.enemies.length - 1; ei >= 0; ei--) {
+      const e = WG.enemies[ei];
+      if (Math.hypot(b.x - e.x, b.y - e.y) < 44 * k) {
+        WG.bullets.splice(bi, 1);
+        WG.enemies.splice(ei, 1);
+        WG.booms.push({x: e.x, y: e.y, ttl: 22});
+        WG.visualDown++;
+        document.getElementById('war_down').textContent = WG.visualDown;
+        break;
+      }
+    }
+  }
+  WG.booms.forEach(bm => bm.ttl--);
+  WG.booms = WG.booms.filter(bm => bm.ttl > 0);
+
+  ctx.clearRect(0, 0, W, H);
+  drawBackground(ctx, W, H);
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillStyle = '#ffcf5c';
+  WG.bullets.forEach(b => {
+    ctx.beginPath(); ctx.arc(b.x, b.y, 7 * k, 0, 7); ctx.fill();
+  });
+  ctx.font = (46 * k) + 'px sans-serif';
+  WG.enemies.forEach(e => {
+    ctx.save(); ctx.translate(e.x, e.y); ctx.rotate(Math.PI);
+    ctx.fillText('✈️', 0, 0); ctx.restore();
+  });
+  WG.booms.forEach(bm => {
+    ctx.globalAlpha = bm.ttl / 22;
+    ctx.font = ((30 + (22 - bm.ttl) * 3) * k) + 'px sans-serif';
+    ctx.fillText('💥', bm.x, bm.y);
+    ctx.globalAlpha = 1;
+  });
+  if (stairVis.on) {
+    ctx.font = (28 * k) + 'px sans-serif';
+    ctx.fillStyle = '#7CFC00';
+    ctx.fillText('🪜 楼梯已识别 · 台阶双倍加分中', W / 2, 44 * k);
+  }
+  ctx.font = (56 * k) + 'px sans-serif';
+  ctx.fillText('🚀', px, py);
+  requestAnimationFrame(warFrame);
+}
+// ---- /战机画面 ----
+
+// ---- AR 模式 ----
+let arVideo = null, arOn = false;
+
+async function toggleAR() {
+  if (arOn) {
+    arOn = false;
+    if (arVideo && arVideo.srcObject)
+      arVideo.srcObject.getTracks().forEach(t => t.stop());
+    arVideo = null;
+    document.getElementById('ar_btn').style.opacity = 1;
+    return;
+  }
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: {facingMode: 'environment'}, audio: false});
+    arVideo = document.createElement('video');
+    arVideo.srcObject = stream;
+    arVideo.setAttribute('playsinline', '');
+    await arVideo.play();
+    arOn = true;
+    document.getElementById('ar_btn').style.opacity = 0.5;
+  } catch (e) {
+    alert('摄像头打开失败：' + e.message + '\n请在系统设置里给 CalAI 相机权限');
+  }
+}
+
+function drawBackground(ctx, W, H) {
+  if (arOn && arVideo && arVideo.readyState >= 2) {
+    const vw = arVideo.videoWidth, vh = arVideo.videoHeight;
+    const s = Math.max(W / vw, H / vh);      // cover 裁剪
+    const dw = vw * s, dh = vh * s;
+    ctx.drawImage(arVideo, (W - dw) / 2, (H - dh) / 2, dw, dh);
+    ctx.fillStyle = 'rgba(10,10,30,0.25)';   // 压暗一点让敌机显眼
+    ctx.fillRect(0, 0, W, H);
+  } else {
+    const g = ctx.createLinearGradient(0, 0, 0, H);
+    g.addColorStop(0, '#12121f'); g.addColorStop(1, '#1d3448');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  }
+}
+// ---- /AR 模式 ----
+
+// ---- 楼梯视觉识别 ----
+let stairVis = {on: false, rows: 0};
+let offC = null;
+
+function analyzeStairs() {
+  if (!arOn || !arVideo || arVideo.readyState < 2) {
+    stairVis.on = false;
+    return;
+  }
+  if (!offC) {
+    offC = document.createElement('canvas');
+    offC.width = 120; offC.height = 68;
+  }
+  const c = offC.getContext('2d', {willReadFrequently: true});
+  c.drawImage(arVideo, 0, 0, 120, 68);
+  const d = c.getImageData(0, 0, 120, 68).data;
+  let edgeRows = 0;
+  for (let y = 1; y < 68; y++) {           // 逐行测横向边缘强度
+    let diff = 0;
+    for (let x = 0; x < 120; x += 2) {
+      const i = (y * 120 + x) * 4, j = ((y - 1) * 120 + x) * 4;
+      diff += Math.abs(d[i] - d[j]) + Math.abs(d[i + 1] - d[j + 1]) +
+              Math.abs(d[i + 2] - d[j + 2]);
+    }
+    if (diff / 60 > 40) edgeRows++;
+  }
+  stairVis.rows = edgeRows;
+  stairVis.on = edgeRows >= 8;             // 台阶 = 大量平行横边
+}
+// ---- /楼梯视觉识别 ----
+
+function saveConfig() {
+  localStorage.setItem('cfg', JSON.stringify({
+    base_url: cfg_url.value, api_key: cfg_key.value, model: cfg_model.value,
+    server: cfg_server.value.trim()}));
+  localStorage.setItem('profile', JSON.stringify({
+    w: +pf_w.value || 70, h: +pf_h.value || 170,
+    a: +pf_a.value || 30, s: pf_s.value || '男', t: +pf_t.value || 0}));
+  toggleSettings();
+  loadActivity();
+}
+
+(() => {
+  const c = cfg();
+  cfg_url.value = c.base_url || 'https://api.moonshot.cn/v1';
+  cfg_key.value = c.api_key || '';
+  cfg_model.value = c.model || 'kimi-latest';
+  const p = profile();
+  pf_w.value = p.w; pf_h.value = p.h; pf_a.value = p.a; pf_s.value = p.s;
+  pf_t.value = p.t || '';
+  if (!c.api_key) toggleSettings(true);
+  // 手动记的楼层合并进活动数据（无桥接时的降级路径）
+  if (!(window.CalAI && CalAI.getActivity)) {
+    window.CalAI = {
+      getActivity: () => JSON.stringify({
+        steps: 0, climbMeters: (JSON.parse(localStorage.getItem('manualFloors') || '{}')[today()] || 0) * 3,
+        hasStepSensor: false, hasBarometer: false}),
+      addClimbFloors: f => {
+        const extra = JSON.parse(localStorage.getItem('manualFloors') || '{}');
+        extra[today()] = (extra[today()] || 0) + f;
+        localStorage.setItem('manualFloors', JSON.stringify(extra));
+      }
+    };
+  }
+  loadToday();
+  loadActivity();
+  renderMetrics();
+  renderGame();
+  renderFriends();
+  wx_name.value = localStorage.getItem('wxname') || '';
+  wx_name.onchange = () => localStorage.setItem('wxname', wx_name.value.trim());
+  loadWatch();
+  setInterval(loadWatch, 8000);
+  if (window.CalAI && CalAI.getMyIp)
+    document.getElementById('my_ip').textContent =
+      CalAI.getMyIp() + ':9477' || '未连Wi-Fi';
+  pollPeers(true);
+  renderLedger();
+  const _inv = invest();
+  if (_inv) { inv_p.value = _inv.p; inv_start.value = _inv.start; inv_r.value = _inv.r; }
+  renderInvest();
+  setInterval(renderInvest, 60000);
+  renderWealth();
+  renderNW();
+  renderHouse();
+  renderWar();
+  startWarGame();
+  setInterval(renderWar, 15000);
+  cfg_server.value = cfg().server || '';
+  reportAndRank();
+  setInterval(reportAndRank, 60000);
+  setInterval(pollPeers, 15000);
+  dumpDebug(false);
+  setInterval(() => dumpDebug(false), 60000);
+})();
+</script>
+</body>
+</html>
